@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "Sinalytix",
+    "slug": "sinalytix-patient",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "sinalytix",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2563EB"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.sinalytix.patient",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Sinalytix, sesli komut alabilmek için mikrofonunuza erişmesi gerekmektedir.",
+        "NSContactsUsageDescription": "Sinalytix, acil kişi eklemenize yardımcı olmak için rehberinize erişebilir.",
+        "NSFaceIDUsageDescription": "Sinalytix, güvenli girişiniz için Face ID kullanmaktadır."
+      },
+      "entitlements": {
+        "com.apple.developer.applesignin": [
+          "Default"
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2563EB"
+      },
+      "package": "com.sinalytix.patient",
+      "permissions": [
+        "RECORD_AUDIO",
+        "READ_CONTACTS"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-apple-authentication"
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#2563EB",
+          "sounds": []
+        }
+      ],
+      "expo-localization",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

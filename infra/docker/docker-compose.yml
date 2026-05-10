@@ -1,0 +1,52 @@
+##
+## Sinalytix Local Development Stack
+##
+## Usage:
+##   docker compose -f infra/docker/docker-compose.yml up -d
+##
+## Services:
+##   - PostgreSQL 16 (port 5432)
+##   - Redis 7 (port 6379)
+##
+## Data residency note:
+##   This is for LOCAL DEVELOPMENT ONLY with synthetic/test data.
+##   Production PHI requires AWS Canada Central (ca-central-1).
+##
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sinalytix-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sinalytix
+      POSTGRES_PASSWORD: sinalytix
+      POSTGRES_DB: sinalytix
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-extensions.sql:/docker-entrypoint-initdb.d/init-extensions.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sinalytix"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: sinalytix-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

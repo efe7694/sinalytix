@@ -1,0 +1,22 @@
+name: Deploy API
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy placeholder
+        run: echo "Deploy to ${{ inputs.environment }} — configure Fly.io or AWS ECS here"

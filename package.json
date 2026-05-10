@@ -1,0 +1,30 @@
+{
+  "name": "sinalytix",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sinalytix — Closed-Loop Care Orchestration Platform",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "type-check": "turbo run type-check",
+    "clean": "turbo run clean",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.5.3",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "@expo/metro-runtime": "6.1.2"
+    }
+  }
+}

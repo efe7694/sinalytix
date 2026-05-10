@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "Sinalytix Caregiver",
+    "slug": "sinalytix-caregiver",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "sinalytix-caregiver",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#059669"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.sinalytix.caregiver",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Sinalytix, sesli vardiya notu alabilmek için mikrofonunuza erişmesi gerekmektedir.",
+        "NSFaceIDUsageDescription": "Sinalytix, güvenli girişiniz için Face ID kullanmaktadır."
+      },
+      "entitlements": {
+        "com.apple.developer.applesignin": ["Default"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#059669"
+      },
+      "package": "com.sinalytix.caregiver",
+      "permissions": ["RECORD_AUDIO"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      ["expo-apple-authentication"],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#059669",
+          "sounds": []
+        }
+      ],
+      "expo-localization",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiUrl": "http://localhost:8000",
+      "googleIosClientId": "",
+      "googleAndroidClientId": "",
+      "googleWebClientId": ""
+    }
+  }
+}

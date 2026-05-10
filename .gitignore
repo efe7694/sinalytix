@@ -1,0 +1,68 @@
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== IDEs =====
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ===== Node / JS =====
+node_modules/
+.turbo/
+dist/
+build/
+*.tsbuildinfo
+.next/
+.expo/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+*.egg
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# ===== Environment =====
+.env
+.env.*
+!.env.example
+
+# ===== Docker =====
+docker-compose.override.yml
+
+# ===== Secrets =====
+credentials.json
+serviceAccountKey.json
+*.pem
+
+# ===== Model weights =====
+services/ai/models/*.bin
+services/ai/models/*.safetensors
+services/ai/models/*.gguf
+
+# ===== Logs =====
+*.log
+logs/
+
+# ===== Claude =====
+.claude/

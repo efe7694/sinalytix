@@ -1,0 +1,15 @@
+{
+  "name": "@sinalytix/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "generate": "echo 'TODO: Generate from OpenAPI spec'",
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
