@@ -19,7 +19,7 @@ jobs:
       - run: pnpm turbo run lint type-check
 
   lint-and-test-backend:
-    name: Backend Lint & Test
+    name: Backend Lint & Test (legacy Python — retired once TS backend reaches parity, DEVIATIONS.md D0)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -39,3 +39,52 @@ jobs:
         run: |
           uv run pytest --tb=short -q || code=$?
           if [ "${code:-0}" -ne 0 ] && [ "${code:-0}" -ne 5 ]; then exit "$code"; fi
+
+  lint-and-test-backend-ts:
+    name: TS Backend (core-api) Lint & Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sinalytix
+          POSTGRES_PASSWORD: sinalytix
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: RLS coverage check (Module 3 §9.2 — no new table merges without RLS)
+        run: pnpm --filter @sinalytix/db run check:rls
+      - name: Build workspace packages (@sinalytix/domain, db, policy-engine, audit)
+        run: pnpm --filter @sinalytix/domain --filter @sinalytix/db --filter @sinalytix/policy-engine --filter @sinalytix/audit run build
+      - name: Type-check
+        run: pnpm --filter @sinalytix/domain --filter @sinalytix/db --filter @sinalytix/policy-engine --filter @sinalytix/audit --filter @sinalytix/core-api run type-check
+      - name: Prepare ephemeral test env (CI-only secrets, not committed)
+        working-directory: services/core-api
+        run: |
+          cp .env.test.example .env.test
+          sed -i "s#^COLUMN_ENCRYPTION_KEY=.*#COLUMN_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")#" .env.test
+          sed -i "s#CHANGEME#$(node -e "console.log(require('crypto').randomBytes(18).toString('base64url'))")#" .env.test
+      - name: Test (RLS-leak + auth-flow suites against real Postgres/Redis)
+        run: cd services/core-api && pnpm test
