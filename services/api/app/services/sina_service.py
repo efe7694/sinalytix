@@ -7,7 +7,7 @@ CRITICAL: Every session is logged to ai_interaction_logs regardless of outcome.
 This is the Phase 1 data collection for fine-tuning.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,11 +19,8 @@ from app.models.agent import (
     VoiceSession,
 )
 from app.models.enums import (
-    ActionType,
-    CancelReason,
     ExecutedBy,
     ExecutionResult,
-    JudgeCategory,
     RiskLevel,
     VoiceSessionStatus,
     VoiceTriggerSource,
@@ -35,7 +32,6 @@ from app.schemas.sina import (
     CreateSessionOut,
     EscalationStatusOut,
     ExecuteActionIn,
-    ProposedActionOut,
     SinaResponse,
 )
 
@@ -50,7 +46,7 @@ async def create_session(
     session = VoiceSession(
         patient_id=str(patient.id),
         trigger_source=VoiceTriggerSource(data.trigger_source),
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         status=VoiceSessionStatus.PROCESSING,
     )
     db.add(session)
@@ -75,15 +71,17 @@ async def process_audio(
         raise ValueError("not_found")
 
     # Log every interaction for Phase 2 fine-tuning
-    db.add(AIInteractionLog(
-        model_version="stub-v1",
-        input_text="[audio_bytes]",
-        output_text="[stub_no_action]",
-        output_structured=None,
-        confidence_score=None,
-        latency_ms=0,
-        context={"patient_id": str(patient.id), "session_id": session_id},
-    ))
+    db.add(
+        AIInteractionLog(
+            model_version="stub-v1",
+            input_text="[audio_bytes]",
+            output_text="[stub_no_action]",
+            output_structured=None,
+            confidence_score=None,
+            latency_ms=0,
+            context={"patient_id": str(patient.id), "session_id": session_id},
+        )
+    )
 
     session.status = VoiceSessionStatus.AWAITING_USER
     await db.flush()
@@ -112,13 +110,15 @@ async def execute_action(
     if not session or session.patient_id != str(patient.id):
         raise ValueError("not_found")
 
-    db.add(ActionExecutionLog(
-        action_id=action_id,
-        executed_by=ExecutedBy.PATIENT_TAP,
-        result=ExecutionResult.SUCCESS,
-        cancel_reason=None,
-        executed_at=datetime.now(timezone.utc),
-    ))
+    db.add(
+        ActionExecutionLog(
+            action_id=action_id,
+            executed_by=ExecutedBy.PATIENT_TAP,
+            result=ExecutionResult.SUCCESS,
+            cancel_reason=None,
+            executed_at=datetime.now(UTC),
+        )
+    )
 
     session.status = VoiceSessionStatus.EXECUTED
     await db.flush()
@@ -136,7 +136,7 @@ async def cancel_session(
         raise ValueError("not_found")
 
     session.status = VoiceSessionStatus.CANCELLED
-    session.ended_at = datetime.now(timezone.utc)
+    session.ended_at = datetime.now(UTC)
     await db.flush()
 
 
@@ -182,6 +182,7 @@ async def get_escalation_status(
 ) -> EscalationStatusOut:
     """Poll escalation status for a session."""
     from sqlalchemy import select
+
     result = await db.execute(
         select(RedEscalationLog)
         .where(

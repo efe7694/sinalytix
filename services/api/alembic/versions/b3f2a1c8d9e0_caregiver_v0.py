@@ -12,29 +12,26 @@ Changes:
 - Add new enum types: caregiver_role, caregiver_profile_status, check_out_reason
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 revision: str = "b3f2a1c8d9e0"
-down_revision: Union[str, None] = "a79155ac1866"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "a79155ac1866"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     # ── New enum types ────────────────────────────────────
-    op.execute(
-        "CREATE TYPE caregiver_role AS ENUM ('psw', 'hca', 'rpn', 'rn', 'other')"
-    )
+    op.execute("CREATE TYPE caregiver_role AS ENUM ('psw', 'hca', 'rpn', 'rn', 'other')")
     op.execute(
         "CREATE TYPE caregiver_profile_status AS ENUM ('active', 'suspended', 'deactivated')"
     )
-    op.execute(
-        "CREATE TYPE check_out_reason AS ENUM ('manual', 'auto_switch', 'system_timeout')"
-    )
+    op.execute("CREATE TYPE check_out_reason AS ENUM ('manual', 'auto_switch', 'system_timeout')")
 
     # ── caregiver_profiles ────────────────────────────────
     op.create_table(

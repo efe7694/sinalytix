@@ -49,7 +49,11 @@ select = [
     "TCH",  # flake8-type-checking
     "RUF",  # ruff-specific
 ]
-ignore = ["S101"]  # allow assert in tests
+ignore = [
+    "S101",  # allow assert in tests
+    "B008",  # FastAPI's Depends()/Header()/etc. as argument defaults is the framework's required pattern
+    "RUF001", "RUF002", "RUF003",  # Turkish characters (ı, ş, ğ, ç, ö, ü) in a Turkish-language product's strings/docstrings/comments are not "ambiguous"
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

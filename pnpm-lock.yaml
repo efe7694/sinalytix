@@ -333,9 +333,15 @@ importers:
         specifier: ^3.24.0
         version: 3.25.76
     devDependencies:
+      eslint:
+        specifier: ^9.19.0
+        version: 9.39.4
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.21.0
+        version: 8.62.1(eslint@9.39.4)(typescript@5.9.3)
 
   packages/ui:
     dependencies:
@@ -346,9 +352,15 @@ importers:
         specifier: '>=0.76.0'
         version: 0.81.6(@babel/core@7.29.0)(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0)
     devDependencies:
+      eslint:
+        specifier: ^9.19.0
+        version: 9.39.4
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.21.0
+        version: 8.62.1(eslint@9.39.4)(typescript@5.9.3)
 
 packages:
 
@@ -4457,6 +4469,13 @@ packages:
   typed-array-length@1.0.8:
     resolution: {integrity: sha512-phPGCwqr2+Qo0fwniCE8e4pKnGu/yFb5nD5Y8bf0EEeiI5GklnACYA9GFy/DrAeRrKHXvHn+1SUsOWgJp6RO+g==}
     engines: {node: '>= 0.4'}
+
+  typescript-eslint@8.62.1:
+    resolution: {integrity: sha512-vymnnM5g0AKQDSAyfP12nMIBvgwgA42syg74kkuZ4x1VuTzwQKwc5h9rGxeShCjny5o+zWAb6OEoz7XLgrIkIw==}
+    engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    peerDependencies:
+      eslint: ^8.57.0 || ^9.0.0 || ^10.0.0
+      typescript: '>=4.8.4 <6.1.0'
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -9990,6 +10009,17 @@ snapshots:
       is-typed-array: 1.1.15
       possible-typed-array-names: 1.1.0
       reflect.getprototypeof: 1.0.10
+
+  typescript-eslint@8.62.1(eslint@9.39.4)(typescript@5.9.3):
+    dependencies:
+      '@typescript-eslint/eslint-plugin': 8.62.1(@typescript-eslint/parser@8.62.1(eslint@9.39.4)(typescript@5.9.3))(eslint@9.39.4)(typescript@5.9.3)
+      '@typescript-eslint/parser': 8.62.1(eslint@9.39.4)(typescript@5.9.3)
+      '@typescript-eslint/typescript-estree': 8.62.1(typescript@5.9.3)
+      '@typescript-eslint/utils': 8.62.1(eslint@9.39.4)(typescript@5.9.3)
+      eslint: 9.39.4
+      typescript: 5.9.3
+    transitivePeerDependencies:
+      - supports-color
 
   typescript@5.9.3: {}
 

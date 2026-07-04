@@ -7,8 +7,7 @@ Key invariants:
 - 24h alert: scheduled job calls mark_24h_alert_sent after sending push
 """
 
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +26,7 @@ class ShiftService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_active_shift(self, caregiver_id: str) -> Optional[ShiftResponse]:
+    async def get_active_shift(self, caregiver_id: str) -> ShiftResponse | None:
         result = await self.db.execute(
             select(CaregiverShift).where(
                 CaregiverShift.caregiver_id == caregiver_id,
@@ -37,14 +36,13 @@ class ShiftService:
         shift = result.scalar_one_or_none()
         return self._to_response(shift) if shift else None
 
-    async def check_in(
-        self, caregiver_id: str, payload: ShiftCheckInRequest
-    ) -> ShiftResponse:
+    async def check_in(self, caregiver_id: str, payload: ShiftCheckInRequest) -> ShiftResponse:
         # Guard: no concurrent active shift
         existing = await self.get_active_shift(caregiver_id)
         if existing:
             # 409 handled in router — caller should use /switch instead
             from fastapi import HTTPException, status
+
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
@@ -58,7 +56,7 @@ class ShiftService:
             caregiver_id=caregiver_id,
             patient_id=payload.patient_id,
             shift_active=True,
-            checked_in_at=datetime.now(timezone.utc),
+            checked_in_at=datetime.now(UTC),
             timezone_iana=payload.timezone_iana,
             alert_24h_sent=False,
         )
@@ -69,7 +67,7 @@ class ShiftService:
 
     async def check_out(
         self, caregiver_id: str, payload: ShiftCheckOutRequest
-    ) -> Optional[ShiftResponse]:
+    ) -> ShiftResponse | None:
         result = await self.db.execute(
             select(CaregiverShift).where(
                 CaregiverShift.caregiver_id == caregiver_id,
@@ -80,7 +78,7 @@ class ShiftService:
         if not shift:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         shift.shift_active = False
         shift.checked_out_at = now
         shift.check_out_reason = CheckOutReason.MANUAL
@@ -97,7 +95,7 @@ class ShiftService:
         self, caregiver_id: str, payload: ShiftCheckInRequest
     ) -> ShiftResponse:
         """Atomically close active shift and open new one for a different patient."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Close existing
         result = await self.db.execute(
@@ -161,15 +159,14 @@ class ShiftService:
 
     async def mark_24h_alert_sent(self, shift_id: str) -> None:
         await self.db.execute(
-            update(CaregiverShift)
-            .where(CaregiverShift.id == shift_id)
-            .values(alert_24h_sent=True)
+            update(CaregiverShift).where(CaregiverShift.id == shift_id).values(alert_24h_sent=True)
         )
         await self.db.commit()
 
     @staticmethod
     def _to_response(shift: CaregiverShift) -> ShiftResponse:
         from app.schemas.caregiver import ShiftResponse
+
         return ShiftResponse(
             shift_id=str(shift.id),
             caregiver_id=str(shift.caregiver_id),

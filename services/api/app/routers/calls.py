@@ -29,4 +29,4 @@ async def log_call(
     try:
         return await calls_service.log_call(user, data, db)
     except ValueError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc

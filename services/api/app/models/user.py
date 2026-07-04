@@ -79,7 +79,9 @@ class OAuthAccount(Base, TimestampMixin):
     __tablename__ = "oauth_accounts"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     provider: Mapped[str] = mapped_column(String(20), nullable=False)  # "apple" | "google"
     provider_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
     provider_email: Mapped[str | None] = mapped_column(

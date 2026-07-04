@@ -31,7 +31,7 @@ async def create_task(
     try:
         return await task_service.create_task(user, data, db)
     except ValueError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 @router.post("/occurrences/{occurrence_id}/complete", response_model=OccurrenceOut)
