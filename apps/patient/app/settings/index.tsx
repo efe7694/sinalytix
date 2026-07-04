@@ -34,14 +34,14 @@ export default function AccountScreen() {
 
   useEffect(() => {
     if (profile) {
-      setNameValue(profile.full_name ?? '');
+      setNameValue(profile.display_name ?? '');
       setEmailValue(profile.email ?? '');
     }
   }, [profile]);
 
   function startEdit(field: EditingField) {
     if (profile) {
-      setNameValue(profile.full_name ?? '');
+      setNameValue(profile.display_name ?? '');
       setEmailValue(profile.email ?? '');
     }
     setEditingField(field);
@@ -49,7 +49,7 @@ export default function AccountScreen() {
 
   function cancelEdit() {
     if (profile) {
-      setNameValue(profile.full_name ?? '');
+      setNameValue(profile.display_name ?? '');
       setEmailValue(profile.email ?? '');
     }
     setEditingField(null);
@@ -58,7 +58,7 @@ export default function AccountScreen() {
   async function saveEdit() {
     if (!editingField) return;
     const patch = editingField === 'name'
-      ? { full_name: nameValue.trim() }
+      ? { display_name: nameValue.trim() }
       : { email: emailValue.trim() };
     await updateProfile(patch);
     setEditingField(null);
@@ -129,7 +129,7 @@ export default function AccountScreen() {
                   placeholderTextColor={COLORS.textDisabled}
                 />
               ) : (
-                <Text style={styles.fieldValue}>{profile?.full_name ?? '—'}</Text>
+                <Text style={styles.fieldValue}>{profile?.display_name ?? '—'}</Text>
               )}
             </View>
             {editingField !== 'name' && (
@@ -451,7 +451,7 @@ const styles = StyleSheet.create({
     gap: SPACING.MD,
   },
   modalTitle: {
-    fontSize: FONT_SIZE.HEADING,
+    fontSize: FONT_SIZE.H3,
     fontWeight: '700',
     color: COLORS.textPrimary,
     textAlign: 'center',

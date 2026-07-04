@@ -9,8 +9,7 @@ interface SwitchPatientModalProps {
 }
 
 export function SwitchPatientModal({ visible, targetPatientId, onClose }: SwitchPatientModalProps) {
-  const { patients, activeShift } = useShiftsStore();
-  const { patients: allPatients, switchPatient } = useShiftsStore();
+  const { activeShift, switchPatient } = useShiftsStore();
   const patientsStore = usePatientsStore();
 
   const currentPatient = patientsStore.patients.find(

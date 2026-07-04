@@ -27,7 +27,7 @@ export default function OtpScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [resendCount, setResendCount] = useState(1);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
+  const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
     intervalRef.current = setInterval(() => {
@@ -127,7 +127,6 @@ export default function OtpScreen() {
           autoFocus
           editable={!maxAttemptsReached && !timedOut}
           textAlign="center"
-          letterSpacing={8}
         />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -178,6 +177,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: '#111827',
+    letterSpacing: 8,
   },
   inputDisabled: { backgroundColor: '#F9FAFB', color: '#9CA3AF' },
   error: { color: '#DC2626', fontSize: 14 },

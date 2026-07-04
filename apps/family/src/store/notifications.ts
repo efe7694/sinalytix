@@ -28,8 +28,8 @@ interface NotificationsState {
   unreadCount: number;
   isLoading: boolean;
 
-  fetchNotifications: () => Promise<void>;
-  markAllRead: () => Promise<void>;
+  fetchNotifications: (patientId: string) => Promise<void>;
+  markAllRead: (patientId: string) => Promise<void>;
 }
 
 export const useNotificationsStore = create<NotificationsState>((set) => ({
@@ -37,10 +37,12 @@ export const useNotificationsStore = create<NotificationsState>((set) => ({
   unreadCount: 0,
   isLoading: false,
 
-  fetchNotifications: async () => {
+  fetchNotifications: async (patientId) => {
     set({ isLoading: true });
     try {
-      const notifications = await api.get<InAppNotification[]>('/family/notifications');
+      const notifications = await api.get<InAppNotification[]>(
+        `/family/patients/${patientId}/notifications`,
+      );
       const unreadCount = notifications.filter((n) => !n.is_read).length;
       set({ notifications, unreadCount });
     } catch {
@@ -50,8 +52,8 @@ export const useNotificationsStore = create<NotificationsState>((set) => ({
     }
   },
 
-  markAllRead: async () => {
-    await api.post('/family/notifications/read-all', {}).catch(() => {});
+  markAllRead: async (patientId) => {
+    await api.post(`/family/patients/${patientId}/notifications/read-all`, {}).catch(() => {});
     set((s) => ({
       notifications: s.notifications.map((n) => ({ ...n, is_read: true })),
       unreadCount: 0,
