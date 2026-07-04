@@ -139,7 +139,7 @@ export default function SOSPopup({ visible, ecPhone, ecName, ecId, onClose }: Pr
       clearTimer();
       Vibration.cancel();
     };
-  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps — intentionally re-runs only on open
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps -- intentionally re-runs only on open
 
   async function handleCancel() {
     clearTimer();

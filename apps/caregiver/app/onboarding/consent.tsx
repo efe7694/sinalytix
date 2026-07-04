@@ -81,7 +81,7 @@ export default function ConsentScreen() {
         <CheckboxRow checked={c.ack_not_emergency} onPress={() => toggle('ack_not_emergency')}>
           <Text style={styles.checkText}>
             Bu uygulama acil durum servisi değildir. Acil durumlarda{' '}
-            <Text style={styles.emphasis}>911</Text>'i ararım.
+            <Text style={styles.emphasis}>911</Text>&apos;i ararım.
           </Text>
         </CheckboxRow>
 

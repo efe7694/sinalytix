@@ -670,7 +670,7 @@ export default function SinaModal({ visible, onClose }: Props) {
         </View>
 
         <View style={styles.panelBody}>
-          <Text style={styles.redMessage}>9-1-1'i aramamı ister misin?</Text>
+          <Text style={styles.redMessage}>9-1-1&apos;i aramamı ister misin?</Text>
           <Text style={styles.redNote}>
             Bu seçeneği yalnızca gerçek bir acil durumda kullanın.
           </Text>
@@ -684,7 +684,7 @@ export default function SinaModal({ visible, onClose }: Props) {
             activeOpacity={0.85}
           >
             <Ionicons name="call" size={20} color="#FFF" />
-            <Text style={styles.panelBtnLabel}>Evet, 9-1-1'i Ara</Text>
+            <Text style={styles.panelBtnLabel}>Evet, 9-1-1&apos;i Ara</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.panelBtn, styles.panelBtnCancel]}
@@ -719,7 +719,7 @@ export default function SinaModal({ visible, onClose }: Props) {
         >
           <Ionicons name="mic" size={40} color="#FFF" />
         </Pressable>
-        <Text style={styles.stateLabel}>Sina'ya söyle</Text>
+        <Text style={styles.stateLabel}>Sina&apos;ya söyle</Text>
         <Text style={styles.stateHint}>Butona bas ve konuş</Text>
       </View>
     );

@@ -85,7 +85,7 @@ export default function NotificationsScreen() {
       </TouchableOpacity>
 
       <Text style={styles.v1Note}>
-        V1'de: kategori bazlı toggle + sessiz saatler (SOS bildirimleri her zaman aktif)
+        V1&apos;de: kategori bazlı toggle + sessiz saatler (SOS bildirimleri her zaman aktif)
       </Text>
     </ScrollView>
   );
