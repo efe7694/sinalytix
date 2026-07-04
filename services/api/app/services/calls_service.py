@@ -1,7 +1,5 @@
 """Calls service — log call attempts and check contact availability."""
 
-from datetime import datetime, timezone
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -80,7 +78,9 @@ async def get_availability(patient: User, db: AsyncSession) -> AvailabilityOut:
             "ec_id": str(ec.id),
             "phone": ec.phone,
             "name": ec.name,
-        } if ec else None,
+        }
+        if ec
+        else None,
     )
 
 

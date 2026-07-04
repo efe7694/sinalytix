@@ -2,7 +2,6 @@
 
 from pydantic import BaseModel, field_validator
 
-
 # ── OTP ──────────────────────────────────────────────────
 
 
@@ -58,7 +57,7 @@ class GoogleAuthRequest(BaseModel):
 class AuthResponse(BaseModel):
     access_token: str
     refresh_token: str
-    token_type: str = "bearer"
+    token_type: str = "bearer"  # noqa: S105 -- OAuth2 token type constant, not a secret
     user_id: str
     is_new_user: bool
 
@@ -73,7 +72,7 @@ class RefreshRequest(BaseModel):
 class RefreshResponse(BaseModel):
     access_token: str
     refresh_token: str
-    token_type: str = "bearer"
+    token_type: str = "bearer"  # noqa: S105 -- OAuth2 token type constant, not a secret
 
 
 # ── Logout ────────────────────────────────────────────────

@@ -30,8 +30,8 @@ async def list_messages(
 ) -> list[MessageOut]:
     try:
         return await messaging_service.list_messages(user, conversation_id, db)
-    except ValueError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found.")
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found.") from exc
 
 
 @router.post(
@@ -50,10 +50,10 @@ async def send_message(
     except ValueError as exc:
         msg = str(exc)
         if msg == "not_found":
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found.")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found.") from exc
         if msg == "conversation_archived":
-            raise HTTPException(status.HTTP_409_CONFLICT, "Conversation is archived.")
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, msg)
+            raise HTTPException(status.HTTP_409_CONFLICT, "Conversation is archived.") from exc
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, msg) from exc
 
 
 @router.post("/conversations/{conversation_id}/read", status_code=status.HTTP_204_NO_CONTENT)
@@ -62,5 +62,5 @@ async def mark_read(
 ) -> None:
     try:
         await messaging_service.mark_conversation_read(user, conversation_id, db)
-    except ValueError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found.")
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found.") from exc

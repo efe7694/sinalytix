@@ -1,12 +1,12 @@
 """Messaging service — conversations and messages."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.messaging import Conversation, ConversationMember, Message, MessageReadStatus
-from app.models.enums import ActorType, ConversationType, MessageSource
+from app.models.enums import ActorType, MessageSource
+from app.models.messaging import Conversation, Message, MessageReadStatus
 from app.models.user import User
 from app.schemas.messaging import ConversationOut, MessageOut, SendMessageIn
 
@@ -27,23 +27,23 @@ async def list_conversations(patient: User, db: AsyncSession) -> list[Conversati
     for conv in conversations:
         unread_count = await _unread_count(conv, patient, db)
         last_preview = await _last_message_preview(conv, db)
-        out.append(ConversationOut(
-            conversation_id=str(conv.id),
-            patient_id=str(conv.patient_id),
-            type=conv.type.value,
-            name=conv.name,
-            archived_at=conv.archived_at,
-            last_message_at=conv.last_message_at,
-            last_message_preview=last_preview,
-            unread_count=unread_count,
-        ))
+        out.append(
+            ConversationOut(
+                conversation_id=str(conv.id),
+                patient_id=str(conv.patient_id),
+                type=conv.type.value,
+                name=conv.name,
+                archived_at=conv.archived_at,
+                last_message_at=conv.last_message_at,
+                last_message_preview=last_preview,
+                unread_count=unread_count,
+            )
+        )
 
     return out
 
 
-async def list_messages(
-    patient: User, conversation_id: str, db: AsyncSession
-) -> list[MessageOut]:
+async def list_messages(patient: User, conversation_id: str, db: AsyncSession) -> list[MessageOut]:
     """Return messages for a conversation the patient belongs to."""
     conv = await db.get(Conversation, conversation_id)
     if not conv or conv.patient_id != str(patient.id):
@@ -81,7 +81,7 @@ async def send_message(
     if conv.archived_at:
         raise ValueError("conversation_archived")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = now + timedelta(days=365 * 2)
 
     msg = Message(
@@ -111,9 +111,7 @@ async def send_message(
     )
 
 
-async def mark_conversation_read(
-    patient: User, conversation_id: str, db: AsyncSession
-) -> None:
+async def mark_conversation_read(patient: User, conversation_id: str, db: AsyncSession) -> None:
     """Mark all messages in a conversation as read by the patient."""
     conv = await db.get(Conversation, conversation_id)
     if not conv or conv.patient_id != str(patient.id):
@@ -126,7 +124,7 @@ async def mark_conversation_read(
     )
     messages = result.scalars().all()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for msg in messages:
         existing = await db.execute(
             select(MessageReadStatus).where(
@@ -135,11 +133,13 @@ async def mark_conversation_read(
             )
         )
         if not existing.scalar_one_or_none():
-            db.add(MessageReadStatus(
-                message_id=str(msg.id),
-                reader_actor_id=str(patient.id),
-                read_at=now,
-            ))
+            db.add(
+                MessageReadStatus(
+                    message_id=str(msg.id),
+                    reader_actor_id=str(patient.id),
+                    read_at=now,
+                )
+            )
 
 
 async def _unread_count(conv: Conversation, patient: User, db: AsyncSession) -> int:

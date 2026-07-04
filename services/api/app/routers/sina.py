@@ -45,8 +45,8 @@ async def submit_audio(
     try:
         content = await audio.read()
         return await sina_service.process_audio(user, session_id, content, db)
-    except ValueError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found.")
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found.") from exc
 
 
 @router.post("/actions/{action_id}/execute", status_code=status.HTTP_204_NO_CONTENT)
@@ -58,8 +58,8 @@ async def execute_action(
 ) -> None:
     try:
         await sina_service.execute_action(user, action_id, data, db)
-    except ValueError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Action not found.")
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Action not found.") from exc
 
 
 @router.post("/sessions/{session_id}/cancel", status_code=status.HTTP_204_NO_CONTENT)
@@ -71,8 +71,8 @@ async def cancel_session(
 ) -> None:
     try:
         await sina_service.cancel_session(user, session_id, data, db)
-    except ValueError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found.")
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found.") from exc
 
 
 @router.post("/sessions/{session_id}/red-escalate", response_model=EscalationStatusOut)
@@ -83,8 +83,8 @@ async def red_escalate(
 ) -> EscalationStatusOut:
     try:
         return await sina_service.trigger_red_escalation(user, session_id, db)
-    except ValueError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found.")
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found.") from exc
 
 
 @router.get("/sessions/{session_id}/escalation-status", response_model=EscalationStatusOut)
@@ -95,5 +95,7 @@ async def escalation_status(
 ) -> EscalationStatusOut:
     try:
         return await sina_service.get_escalation_status(user, session_id, db)
-    except ValueError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No escalation found for this session.")
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "No escalation found for this session."
+        ) from exc

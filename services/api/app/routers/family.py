@@ -25,7 +25,7 @@ GET    /family/availability/{patient_id}            — DND status
 PATCH  /family/availability/{patient_id}            — toggle DND
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -48,9 +48,7 @@ router = APIRouter(prefix="/family", tags=["family"])
 # ── Helpers ──────────────────────────────────────────────
 
 
-async def _get_ec_link(
-    db: AsyncSession, family_user_id: str, patient_id: str
-) -> EmergencyContact:
+async def _get_ec_link(db: AsyncSession, family_user_id: str, patient_id: str) -> EmergencyContact:
     """Verify and return the EC link between family member and patient."""
     result = await db.execute(
         select(EmergencyContact).where(
@@ -161,14 +159,16 @@ async def create_task(
     try:
         return await task_service.create_task(user, data, db)
     except ValueError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 class CarryOverIn(BaseModel):
     target_date: str  # YYYY-MM-DD
 
 
-@router.post("/tasks/occurrences/{occurrence_id}/carry-over", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/tasks/occurrences/{occurrence_id}/carry-over", status_code=status.HTTP_204_NO_CONTENT
+)
 async def carry_over_task(
     occurrence_id: str,
     data: CarryOverIn,
@@ -176,16 +176,12 @@ async def carry_over_task(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Reschedule a pending task occurrence to a future date."""
-    result = await db.execute(
-        select(TaskOccurrence).where(TaskOccurrence.id == occurrence_id)
-    )
+    result = await db.execute(select(TaskOccurrence).where(TaskOccurrence.id == occurrence_id))
     occ = result.scalar_one_or_none()
     if occ is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Task occurrence not found.")
 
-    task_result = await db.execute(
-        select(TaskDefinition).where(TaskDefinition.id == occ.task_id)
-    )
+    task_result = await db.execute(select(TaskDefinition).where(TaskDefinition.id == occ.task_id))
     task_def = task_result.scalar_one_or_none()
     if task_def is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Task definition not found.")
@@ -206,7 +202,7 @@ async def carry_over_all(
     """Carry all pending task occurrences to a target date."""
     await _get_ec_link(db, str(user.id), patient_id)
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(UTC).date().isoformat()
     result = await db.execute(
         select(TaskOccurrence)
         .join(TaskDefinition, TaskDefinition.id == TaskOccurrence.task_id)
@@ -245,8 +241,8 @@ async def list_messages(
 ) -> list[MessageOut]:
     try:
         return await messaging_service.list_messages(user, conversation_id, db)
-    except ValueError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found.")
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found.") from exc
 
 
 @router.post(
@@ -265,10 +261,10 @@ async def send_message(
     except ValueError as exc:
         msg = str(exc)
         if msg == "not_found":
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found.")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found.") from exc
         if msg == "conversation_archived":
-            raise HTTPException(status.HTTP_409_CONFLICT, "Conversation is archived.")
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, msg)
+            raise HTTPException(status.HTTP_409_CONFLICT, "Conversation is archived.") from exc
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, msg) from exc
 
 
 # ── Shifts ────────────────────────────────────────────────
@@ -302,9 +298,14 @@ async def _shift_to_out(shift: CaregiverShift, db: AsyncSession) -> ShiftOut:
     caregiver = caregiver_result.scalar_one_or_none()
     caregiver_name = f"{caregiver.first_name} {caregiver.last_name}" if caregiver else "Bakıcı"
 
-    shift_status = "active" if shift.shift_active else (
-        "cancelled" if shift.check_out_reason and shift.check_out_reason.value == "auto_switch"
-        else "completed"
+    shift_status = (
+        "active"
+        if shift.shift_active
+        else (
+            "cancelled"
+            if shift.check_out_reason and shift.check_out_reason.value == "auto_switch"
+            else "completed"
+        )
     )
 
     return ShiftOut(
@@ -448,7 +449,9 @@ class SymptomPreviewOut(BaseModel):
     unread_count: int
 
 
-@router.get("/patients/{patient_id}/symptoms/latest-unread", response_model=SymptomPreviewOut | None)
+@router.get(
+    "/patients/{patient_id}/symptoms/latest-unread", response_model=SymptomPreviewOut | None
+)
 async def latest_unread_symptom(
     patient_id: str,
     user: CurrentUser,
@@ -489,7 +492,9 @@ async def list_approvals(
     return []  # TODO: implement in v1
 
 
-@router.patch("/patients/{patient_id}/approvals/{approval_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.patch(
+    "/patients/{patient_id}/approvals/{approval_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 async def decide_approval(
     patient_id: str,
     approval_id: str,
@@ -527,4 +532,6 @@ async def sina_chat(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     # TODO: implement in v1 — proxy to AI service with family-scoped context
-    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Sina chat not yet implemented for family.")
+    raise HTTPException(
+        status.HTTP_501_NOT_IMPLEMENTED, "Sina chat not yet implemented for family."
+    )

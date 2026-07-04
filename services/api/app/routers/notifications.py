@@ -24,9 +24,7 @@ async def list_notifications(
 
 
 @router.post("/read-all", status_code=status.HTTP_204_NO_CONTENT)
-async def mark_all_read(
-    user: CurrentUser, db: AsyncSession = Depends(get_db)
-) -> None:
+async def mark_all_read(user: CurrentUser, db: AsyncSession = Depends(get_db)) -> None:
     await notifications_service.mark_all_read(user, db)
 
 

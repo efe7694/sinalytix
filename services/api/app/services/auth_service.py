@@ -18,12 +18,14 @@ Logout:
   delete Redis key refresh:{jti} to revoke the refresh token
 """
 
+import contextlib
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import structlog
-from jose import JWTError, jwt as jose_jwt
+from jose import JWTError
+from jose import jwt as jose_jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,7 +88,7 @@ async def otp_send(phone: str) -> int:
     # Twilio veya AWS SNS kullanılacak. credentials gerekiyor:
     #   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER
     # veya AWS_SNS_ARN + boto3. Şimdilik OTP sadece log'a yazılıyor.
-    logger.info("otp_generated", phone=phone, code=code)  # noqa: T201
+    logger.info("otp_generated", phone=phone, code=code)
 
     return ttl
 
@@ -260,15 +262,13 @@ async def complete_onboarding(user: User, req: CompleteOnboardingRequest, db: As
         )
         db.add(record)
         user.consent_version = settings.tos_version
-        user.consent_timestamp = datetime.now(timezone.utc)
+        user.consent_timestamp = datetime.now(UTC)
 
     if req.emergency_contact:
         ec = req.emergency_contact
         relationship_val = ECRelationship.OTHER
-        try:
+        with contextlib.suppress(ValueError):
             relationship_val = ECRelationship(ec.relationship)
-        except ValueError:
-            pass
         contact = EmergencyContact(
             user_id=str(user.id),
             name=ec.name,
@@ -283,10 +283,8 @@ async def complete_onboarding(user: User, req: CompleteOnboardingRequest, db: As
         hs = req.health_seed
         allergy_flag = AllergyFlag.UNKNOWN
         if hs.allergy_flag:
-            try:
+            with contextlib.suppress(ValueError):
                 allergy_flag = AllergyFlag(hs.allergy_flag)
-            except ValueError:
-                pass
         profile = HealthProfile(
             user_id=str(user.id),
             conditions=hs.conditions,
@@ -296,7 +294,7 @@ async def complete_onboarding(user: User, req: CompleteOnboardingRequest, db: As
         db.add(profile)
 
     user.onboarding_completed = True
-    user.onboarding_completed_at = datetime.now(timezone.utc)
+    user.onboarding_completed_at = datetime.now(UTC)
     user.status = UserStatus.ACTIVE
 
     await db.flush()
@@ -315,7 +313,7 @@ async def request_account_deletion(user: User, db: AsyncSession) -> datetime:
     from app.models.account import AccountDeletionRequest
     from app.models.enums import AccountDeletionStatus
 
-    scheduled = datetime.now(timezone.utc) + timedelta(days=30)
+    scheduled = datetime.now(UTC) + timedelta(days=30)
     req = AccountDeletionRequest(
         user_id=str(user.id),
         scheduled_deletion_at=scheduled,
@@ -354,7 +352,7 @@ async def _get_or_create_phone_user(phone: str, db: AsyncSession) -> tuple[User,
     user = result.scalar_one_or_none()
 
     if user:
-        user.last_login_at = datetime.now(timezone.utc)
+        user.last_login_at = datetime.now(UTC)
         return user, False
 
     user = User(
@@ -388,7 +386,7 @@ async def _get_or_create_oauth_user(
     if oauth:
         result2 = await db.execute(select(User).where(User.id == oauth.user_id))
         user = result2.scalar_one()
-        user.last_login_at = datetime.now(timezone.utc)
+        user.last_login_at = datetime.now(UTC)
         return user, False
 
     # New user
