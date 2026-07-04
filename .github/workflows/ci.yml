@@ -35,4 +35,7 @@ jobs:
       - run: uv sync --all-extras
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pytest --tb=short -q
+      - name: Run tests (services/api has no test files yet — pytest's exit 5 "no tests collected" is expected, not a failure)
+        run: |
+          uv run pytest --tb=short -q || code=$?
+          if [ "${code:-0}" -ne 0 ] && [ "${code:-0}" -ne 5 ]; then exit "$code"; fi
