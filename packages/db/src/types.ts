@@ -235,6 +235,32 @@ export interface OauthIdentitiesTable {
   created_at: GeneratedTimestamp;
 }
 
+export interface SdmDeclarationsTable {
+  sdm_declaration_id: Generated<string>;
+  patient_id: string;
+  sdm_user_id: string;
+  province_rule: ColumnType<string, string | undefined, string>;
+  poa_document_id: string | null;
+  active: ColumnType<boolean, boolean | undefined, boolean>;
+  activated_by: string | null;
+  created_at: GeneratedTimestamp;
+}
+
+export interface ConsentGrantsTable {
+  grant_id: Generated<string>;
+  patient_id: string;
+  granted_to_kind: string;
+  granted_to_id: string;
+  scope: unknown;
+  permission: string;
+  period_start: Timestamp | null;
+  period_end: Timestamp | null;
+  granted_by: string;
+  revoked_at: Timestamp | null;
+  revoked_by: string | null;
+  created_at: GeneratedTimestamp;
+}
+
 export interface Database {
   users: UsersTable;
   oauth_identities: OauthIdentitiesTable;
@@ -255,4 +281,6 @@ export interface Database {
   consent_records: ConsentRecordsTable;
   audit_log_entries: AuditLogEntriesTable;
   policy_decisions: PolicyDecisionsTable;
+  sdm_declarations: SdmDeclarationsTable;
+  consent_grants: ConsentGrantsTable;
 }

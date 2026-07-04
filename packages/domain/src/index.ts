@@ -11,4 +11,5 @@ export * from './enums';
 export * from './errors';
 export * from './user';
 export * from './consent';
+export * from './consent-grant';
 export * from './pagination';
