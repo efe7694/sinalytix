@@ -1,0 +1,31 @@
+{
+  "name": "@sinalytix/db",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src/",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "db:create": "dotenv -e .env -- tsx scripts/ensure-database.ts",
+    "db:app-role": "dotenv -e .env -- tsx scripts/ensure-app-role.ts",
+    "migrate:up": "dotenv -e .env -- node-pg-migrate up",
+    "migrate:down": "dotenv -e .env -- node-pg-migrate down",
+    "migrate:create": "node-pg-migrate create --",
+    "check:rls": "tsx scripts/check-rls-coverage.ts"
+  },
+  "dependencies": {
+    "kysely": "^0.27.4",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "dotenv-cli": "^8.0.0",
+    "node-pg-migrate": "^7.9.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.8"
+  }
+}
