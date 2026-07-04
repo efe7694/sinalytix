@@ -1,6 +1,6 @@
 """Notifications service — list, read, push token registration."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +38,7 @@ async def list_notifications(patient: User, db: AsyncSession) -> list[Notificati
 
 async def mark_all_read(patient: User, db: AsyncSession) -> None:
     """Bulk mark all unread notifications as read."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     await db.execute(
         update(Notification)
         .where(
@@ -49,9 +49,7 @@ async def mark_all_read(patient: User, db: AsyncSession) -> None:
     )
 
 
-async def register_push_token(
-    patient: User, data: RegisterPushTokenIn, db: AsyncSession
-) -> None:
+async def register_push_token(patient: User, data: RegisterPushTokenIn, db: AsyncSession) -> None:
     """Upsert device push token for the patient."""
     result = await db.execute(
         select(PushToken).where(
@@ -62,10 +60,12 @@ async def register_push_token(
     existing = result.scalar_one_or_none()
     if existing:
         existing.platform = data.platform
-        existing.updated_at = datetime.now(timezone.utc)
+        existing.updated_at = datetime.now(UTC)
     else:
-        db.add(PushToken(
-            user_id=str(patient.id),
-            token=data.token,
-            platform=data.platform,
-        ))
+        db.add(
+            PushToken(
+                user_id=str(patient.id),
+                token=data.token,
+                platform=data.platform,
+            )
+        )

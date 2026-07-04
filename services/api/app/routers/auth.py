@@ -47,8 +47,8 @@ async def otp_send(req: OtpSendRequest) -> OtpSendResponse:
             raise HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS,
                 "OTP rate limit exceeded. Try again later.",
-            )
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+            ) from exc
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     return OtpSendResponse(ok=True, expires_in_seconds=ttl)
 
 
@@ -59,12 +59,14 @@ async def otp_verify(req: OtpVerifyRequest, db: AsyncSession = Depends(get_db)) 
     except ValueError as exc:
         msg = str(exc)
         if msg == "expired":
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "OTP expired. Request a new code.")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "OTP expired. Request a new code."
+            ) from exc
         if msg == "too_many_attempts":
-            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts.")
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts.") from exc
         if msg == "invalid_code":
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid OTP code.")
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, msg)
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid OTP code.") from exc
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, msg) from exc
 
 
 # ── Apple ─────────────────────────────────────────────────
@@ -78,7 +80,7 @@ async def apple_auth(req: AppleAuthRequest, db: AsyncSession = Depends(get_db)) 
         )
     except ValueError as exc:
         logger.warning("apple_auth_failed", error=str(exc))
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Apple authentication failed.")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Apple authentication failed.") from exc
 
 
 # ── Google ────────────────────────────────────────────────
@@ -90,7 +92,7 @@ async def google_auth(req: GoogleAuthRequest, db: AsyncSession = Depends(get_db)
         return await auth_service.google_auth(req.id_token, db)
     except ValueError as exc:
         logger.warning("google_auth_failed", error=str(exc))
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Google authentication failed.")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Google authentication failed.") from exc
 
 
 # ── Refresh ───────────────────────────────────────────────
@@ -101,7 +103,7 @@ async def refresh(req: RefreshRequest, db: AsyncSession = Depends(get_db)) -> Re
     try:
         return await auth_service.refresh_tokens(req.refresh_token, db)
     except ValueError as exc:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc))
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
 
 
 # ── Logout ────────────────────────────────────────────────

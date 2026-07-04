@@ -11,7 +11,7 @@ Undo window:
 """
 
 import calendar
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -115,16 +115,14 @@ async def create_task(user: User, data: CreateTaskIn, db: AsyncSession) -> Today
 # ── Complete ──────────────────────────────────────────────
 
 
-async def complete_occurrence(
-    user: User, occurrence_id: str, db: AsyncSession
-) -> OccurrenceOut:
+async def complete_occurrence(user: User, occurrence_id: str, db: AsyncSession) -> OccurrenceOut:
     occ = await _fetch_patient_occurrence(user, occurrence_id, db)
 
     if occ.status != TaskOccurrenceStatus.TODO:
         raise ValueError("not_todo")
 
     occ.status = TaskOccurrenceStatus.DONE
-    occ.completed_at = datetime.now(timezone.utc)
+    occ.completed_at = datetime.now(UTC)
     occ.completed_by_actor_type = str(user.role)
     occ.completed_by_actor_id = str(user.id)
 
@@ -143,7 +141,7 @@ async def undo_occurrence(user: User, occurrence_id: str, db: AsyncSession) -> O
     if occ.status != TaskOccurrenceStatus.DONE:
         raise ValueError("not_done")
     if occ.completed_at:
-        elapsed = (datetime.now(timezone.utc) - occ.completed_at).total_seconds()
+        elapsed = (datetime.now(UTC) - occ.completed_at).total_seconds()
         if elapsed > _UNDO_WINDOW_SECONDS:
             raise ValueError("undo_window_expired")
 
@@ -168,7 +166,7 @@ async def skip_occurrence(user: User, occurrence_id: str, db: AsyncSession) -> O
         raise ValueError("not_todo")
 
     occ.status = TaskOccurrenceStatus.SKIPPED
-    occ.skipped_at = datetime.now(timezone.utc)
+    occ.skipped_at = datetime.now(UTC)
     occ.skipped_by_actor_type = str(user.role)
     occ.skip_reason = SkipReason.MANUAL
 
@@ -187,9 +185,7 @@ async def increment_counter(user: User, occurrence_id: str, db: AsyncSession) ->
     if occ.status == TaskOccurrenceStatus.DONE:
         raise ValueError("already_done")
 
-    result = await db.execute(
-        select(TaskSchedule).where(TaskSchedule.task_id == str(occ.task_id))
-    )
+    result = await db.execute(select(TaskSchedule).where(TaskSchedule.task_id == str(occ.task_id)))
     schedule = result.scalar_one_or_none()
     target = schedule.target_per_day if schedule else None
 
@@ -198,7 +194,7 @@ async def increment_counter(user: User, occurrence_id: str, db: AsyncSession) ->
 
     if target and occ.progress_count >= target:
         occ.status = TaskOccurrenceStatus.DONE
-        occ.completed_at = datetime.now(timezone.utc)
+        occ.completed_at = datetime.now(UTC)
         occ.completed_by_actor_type = str(user.role)
         occ.completed_by_actor_id = str(user.id)
 
@@ -268,9 +264,7 @@ async def _fetch_patient_occurrence(
 
 
 async def _patient_id_for_occurrence(occ: TaskOccurrence, db: AsyncSession) -> str:
-    result = await db.execute(
-        select(TaskDefinition).where(TaskDefinition.id == str(occ.task_id))
-    )
+    result = await db.execute(select(TaskDefinition).where(TaskDefinition.id == str(occ.task_id)))
     task_def = result.scalar_one()
     return str(task_def.patient_id)
 

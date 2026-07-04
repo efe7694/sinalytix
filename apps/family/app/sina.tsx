@@ -105,7 +105,7 @@ export default function SinaScreen() {
         {messages.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>✨</Text>
-            <Text style={styles.emptyTitle}>Sina'ya sor</Text>
+            <Text style={styles.emptyTitle}>Sina&apos;ya sor</Text>
             <Text style={styles.emptySubtitle}>
               Hastanın günlük bakım özeti, görev durumu, semptomlar ve bakıcı vardiyası hakkında sorular sorabilirsiniz.
             </Text>
@@ -122,7 +122,7 @@ export default function SinaScreen() {
             </View>
             <View style={styles.disclaimer}>
               <Text style={styles.disclaimerText}>
-                ⚠ Sina tıbbi tavsiye vermez. Acil durum için 911'i arayın.
+                ⚠ Sina tıbbi tavsiye vermez. Acil durum için 911&apos;i arayın.
               </Text>
             </View>
           </View>

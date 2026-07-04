@@ -26,6 +26,6 @@
     "overrides": {
       "@expo/metro-runtime": "6.1.2"
     },
-    "onlyBuiltDependencies": ["argon2", "@nestjs/core", "@swc/core"]
+    "onlyBuiltDependencies": ["argon2", "@nestjs/core", "@swc/core", "unrs-resolver"]
   }
 }

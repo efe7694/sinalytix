@@ -148,7 +148,7 @@ export default function HealthScreen() {
             meds.map((med) => (
               <View key={med.medication_id} style={styles.medRow}>
                 <Ionicons
-                  name="pill-outline"
+                  name="medical-outline"
                   size={20}
                   color={COLORS.primary}
                   style={styles.medIcon}

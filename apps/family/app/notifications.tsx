@@ -9,22 +9,22 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useNotificationsStore, type InAppNotification } from '@/store/notifications';
+import { useNotificationsStore, type InAppNotification, type NotificationType } from '@/store/notifications';
 import { usePatientsStore } from '@/store/patients';
 import { useState } from 'react';
 
 const BRAND = '#6366F1';
 
-const TYPE_LABELS: Record<string, { label: string; icon: string; color: string }> = {
-  sos_triggered: { label: 'SOS', icon: '🚨', color: '#DC2626' },
-  sos_resolved: { label: 'SOS Çözüldü', icon: '✅', color: '#16A34A' },
-  shift_started: { label: 'Vardiya', icon: '🟢', color: '#059669' },
-  shift_ended: { label: 'Vardiya Bitti', icon: '🔴', color: '#6B7280' },
-  task_completed: { label: 'Görev', icon: '✅', color: '#059669' },
-  task_overdue: { label: 'Geciken Görev', icon: '⚠', color: '#D97706' },
-  message_received: { label: 'Mesaj', icon: '💬', color: BRAND },
-  symptom_reported: { label: 'Semptom', icon: '🩺', color: '#7C3AED' },
-  approval_request: { label: 'Onay Talebi', icon: '🔐', color: '#0891B2' },
+const TYPE_LABELS: Record<NotificationType, { label: string; icon: string; color: string }> = {
+  sos: { label: 'SOS', icon: '🚨', color: '#DC2626' },
+  caregiver_checkin: { label: 'Vardiya', icon: '🟢', color: '#059669' },
+  caregiver_checkout: { label: 'Vardiya Bitti', icon: '🔴', color: '#6B7280' },
+  task_change: { label: 'Görev', icon: '✅', color: '#059669' },
+  new_message: { label: 'Mesaj', icon: '💬', color: BRAND },
+  symptom: { label: 'Semptom', icon: '🩺', color: '#7C3AED' },
+  approval_pending: { label: 'Onay Talebi', icon: '🔐', color: '#0891B2' },
+  permission_change: { label: 'Yetki Değişikliği', icon: '🔑', color: '#0891B2' },
+  caregiver_link_change: { label: 'Bakıcı Bağlantısı', icon: '🔗', color: '#0891B2' },
   daily_report: { label: 'Günlük Rapor', icon: '📋', color: '#374151' },
 };
 
@@ -49,29 +49,23 @@ export default function NotificationsScreen() {
 
   const handlePress = (n: InAppNotification) => {
     switch (n.type) {
-      case 'sos_triggered':
-      case 'sos_resolved':
+      case 'sos':
         router.back();
         break;
-      case 'shift_started':
-      case 'shift_ended':
+      case 'caregiver_checkin':
+      case 'caregiver_checkout':
         router.push('/shift-detail');
         break;
-      case 'task_completed':
-      case 'task_overdue':
+      case 'task_change':
         router.push('/(main)/tasks');
         break;
-      case 'message_received':
-        if (n.reference_id) router.push(`/conversation/${n.reference_id}`);
-        break;
-      case 'symptom_reported':
-        if (n.reference_id) router.push(`/symptoms/${n.reference_id}`);
-        break;
-      case 'approval_request':
-        router.push('/approvals');
-        break;
+      case 'new_message':
+      case 'symptom':
       case 'daily_report':
-        if (n.reference_id) router.push(`/report/${n.reference_id}`);
+        if (n.deep_link) router.push(n.deep_link as never);
+        break;
+      case 'approval_pending':
+        router.push('/approvals');
         break;
       default:
         router.back();

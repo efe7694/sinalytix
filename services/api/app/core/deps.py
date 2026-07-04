@@ -24,8 +24,8 @@ async def get_current_user(
     token = authorization[7:]
     try:
         payload = verify_token(token)
-    except JWTError:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
+    except JWTError as e:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token") from e
     if payload.get("type") != "access":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token type")
     user = await db.get(User, payload["sub"])

@@ -1,14 +1,13 @@
 """Business logic for caregiver profile and patient linking."""
 
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.caregiver import CaregiverLink, CaregiverProfile
-from app.models.enums import AuthMethod, CaregiverLinkStatus, CaregiverProfileStatus
 from app.models.consent import ConsentRecord
+from app.models.enums import CaregiverLinkStatus, CaregiverProfileStatus
 from app.models.user import User
 from app.schemas.caregiver import (
     CaregiverOnboardingCompleteRequest,
@@ -41,7 +40,7 @@ class CaregiverService:
                 phone=payload.phone,
                 email=payload.email,
                 status=CaregiverProfileStatus.ACTIVE,
-                onboarding_completed_at=datetime.now(timezone.utc),
+                onboarding_completed_at=datetime.now(UTC),
             )
             self.db.add(profile)
         else:
@@ -52,7 +51,7 @@ class CaregiverService:
             if payload.email:
                 profile.email = payload.email
             if not profile.onboarding_completed_at:
-                profile.onboarding_completed_at = datetime.now(timezone.utc)
+                profile.onboarding_completed_at = datetime.now(UTC)
 
         # Write consent record (immutable insert-only)
         consent = ConsentRecord(
@@ -77,7 +76,7 @@ class CaregiverService:
         await self.db.refresh(profile)
         return profile
 
-    async def get_profile(self, user_id: str) -> Optional[CaregiverProfile]:
+    async def get_profile(self, user_id: str) -> CaregiverProfile | None:
         result = await self.db.execute(
             select(CaregiverProfile).where(CaregiverProfile.user_id == user_id)
         )
@@ -95,9 +94,7 @@ class CaregiverService:
         summaries = []
         for link in links:
             # Fetch patient basic info
-            patient_result = await self.db.execute(
-                select(User).where(User.id == link.patient_id)
-            )
+            patient_result = await self.db.execute(select(User).where(User.id == link.patient_id))
             patient = patient_result.scalar_one_or_none()
             if not patient:
                 continue
@@ -126,7 +123,7 @@ class CaregiverService:
         if not link:
             raise ValueError("Invalid or expired link code")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if link.expires_at < now:
             link.status = CaregiverLinkStatus.EXPIRED
             await self.db.commit()

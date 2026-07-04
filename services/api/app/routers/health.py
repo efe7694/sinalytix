@@ -55,5 +55,5 @@ async def delete_medication(
 ) -> None:
     try:
         await health_service.delete_medication(user, medication_id, db)
-    except ValueError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Medication not found.")
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Medication not found.") from exc

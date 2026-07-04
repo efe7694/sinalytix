@@ -35,7 +35,7 @@ export interface CreateTaskInput {
 }
 
 interface OccurrenceUpdate {
-  status: string;
+  status: Task['status'];
   progress_count: number | null;
   completed_at: string | null;
   skipped_at: string | null;

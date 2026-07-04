@@ -7,10 +7,10 @@ OTP: 6-digit numeric, generated with secrets module.
 
 import secrets
 import string
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from jose import JWTError, jwt
+from jose import jwt
 
 from app.core.config import settings
 
@@ -18,7 +18,7 @@ _OTP_CHARS = string.digits
 
 
 def create_access_token(user_id: str, role: str) -> str:
-    exp = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+    exp = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
     return jwt.encode(
         {"sub": user_id, "role": role, "type": "access", "exp": exp},
         settings.jwt_secret_key,
@@ -27,7 +27,7 @@ def create_access_token(user_id: str, role: str) -> str:
 
 
 def create_refresh_token(user_id: str) -> tuple[str, datetime]:
-    exp = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+    exp = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
     token = jwt.encode(
         {"sub": user_id, "type": "refresh", "exp": exp},
         settings.jwt_secret_key,

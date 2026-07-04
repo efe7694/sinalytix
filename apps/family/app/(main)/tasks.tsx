@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppHeader } from '@/components/AppHeader';
 import { usePatientsStore } from '@/store/patients';
-import { useTasksStore, type TaskOccurrence, type TaskType, type TaskSubtype } from '@/store/tasks';
+import { useTasksStore, type AddTaskPayload, type TaskOccurrence, type TaskType, type TaskSubtype } from '@/store/tasks';
 
 const BRAND = '#6366F1';
 
@@ -167,7 +167,7 @@ function AddTaskModal({
   visible: boolean;
   onClose: () => void;
   patientId: string;
-  onAdd: (p: Parameters<ReturnType<typeof useTasksStore>['addTask']>[0]) => Promise<void>;
+  onAdd: (p: AddTaskPayload) => Promise<void>;
 }) {
   const [title, setTitle] = useState('');
   const [type, setType] = useState<TaskType>('one_time');

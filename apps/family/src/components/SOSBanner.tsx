@@ -22,7 +22,7 @@ export function SOSBanner() {
           style={styles.callBtn}
           onPress={() => Linking.openURL('tel:911')}
         >
-          <Text style={styles.callText}>911'i Ara</Text>
+          <Text style={styles.callText}>911&apos;i Ara</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.dismissBtn} onPress={dismissSOS}>
           <Text style={styles.dismissText}>Gördüm</Text>

@@ -66,7 +66,6 @@ export default function DoneScreen() {
               autoCapitalize="characters"
               maxLength={6}
               textAlign="center"
-              letterSpacing={6}
               autoFocus
             />
             {linkError ? <Text style={styles.error}>{linkError}</Text> : null}

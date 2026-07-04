@@ -1,6 +1,6 @@
 """Health profile service — get, update, medications."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,35 +33,40 @@ async def update_health_profile(
 ) -> HealthProfileResponse:
     """Partial update of health profile with audit logging."""
     profile = await _get_or_create_profile(patient, db)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if data.conditions is not None and data.conditions != profile.conditions:
-        db.add(HealthProfileAuditLog(
-            user_id=str(patient.id),
-            field_changed=HealthProfileField.CONDITIONS,
-            previous_value={"conditions": profile.conditions},
-            new_value={"conditions": data.conditions},
-            changed_by_actor="patient",
-            changed_at=now,
-        ))
+        db.add(
+            HealthProfileAuditLog(
+                user_id=str(patient.id),
+                field_changed=HealthProfileField.CONDITIONS,
+                previous_value={"conditions": profile.conditions},
+                new_value={"conditions": data.conditions},
+                changed_by_actor="patient",
+                changed_at=now,
+            )
+        )
         profile.conditions = data.conditions
 
     if data.conditions_other_text is not None:
         profile.conditions_other_text = data.conditions_other_text
 
     if data.allergies is not None and data.allergies != profile.allergies:
-        db.add(HealthProfileAuditLog(
-            user_id=str(patient.id),
-            field_changed=HealthProfileField.ALLERGIES,
-            previous_value={"allergies": profile.allergies},
-            new_value={"allergies": data.allergies},
-            changed_by_actor="patient",
-            changed_at=now,
-        ))
+        db.add(
+            HealthProfileAuditLog(
+                user_id=str(patient.id),
+                field_changed=HealthProfileField.ALLERGIES,
+                previous_value={"allergies": profile.allergies},
+                new_value={"allergies": data.allergies},
+                changed_by_actor="patient",
+                changed_at=now,
+            )
+        )
         profile.allergies = data.allergies
 
     if data.allergy_flag is not None:
         from app.models.enums import AllergyFlag
+
         profile.allergy_flag = AllergyFlag(data.allergy_flag)
 
     if data.allergy_notes_text is not None:
@@ -69,6 +74,7 @@ async def update_health_profile(
 
     if data.declared_confidence is not None:
         from app.models.enums import DeclaredConfidence
+
         profile.declared_confidence = DeclaredConfidence(data.declared_confidence)
 
     profile.last_updated_by = "patient"
@@ -97,43 +103,43 @@ async def add_medication(
     await db.refresh(med)
 
     # Log audit
-    db.add(HealthProfileAuditLog(
-        user_id=str(patient.id),
-        field_changed=HealthProfileField.MEDICATION_ADDED,
-        previous_value=None,
-        new_value={"medication_id": str(med.id), "name": med.name},
-        changed_by_actor="patient",
-    ))
+    db.add(
+        HealthProfileAuditLog(
+            user_id=str(patient.id),
+            field_changed=HealthProfileField.MEDICATION_ADDED,
+            previous_value=None,
+            new_value={"medication_id": str(med.id), "name": med.name},
+            changed_by_actor="patient",
+        )
+    )
 
     return _medication_to_out(med)
 
 
-async def delete_medication(
-    patient: User, medication_id: str, db: AsyncSession
-) -> None:
+async def delete_medication(patient: User, medication_id: str, db: AsyncSession) -> None:
     """Soft-delete a medication record."""
     med = await db.get(MedicationRecord, medication_id)
     if not med or med.user_id != str(patient.id) or med.deleted_at:
         raise ValueError("not_found")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     med.deleted_at = now
     med.status = MedicationStatus.ARCHIVED
 
-    db.add(HealthProfileAuditLog(
-        user_id=str(patient.id),
-        field_changed=HealthProfileField.MEDICATION_REMOVED,
-        previous_value={"medication_id": medication_id, "name": med.name},
-        new_value=None,
-        changed_by_actor="patient",
-        changed_at=now,
-    ))
+    db.add(
+        HealthProfileAuditLog(
+            user_id=str(patient.id),
+            field_changed=HealthProfileField.MEDICATION_REMOVED,
+            previous_value={"medication_id": medication_id, "name": med.name},
+            new_value=None,
+            changed_by_actor="patient",
+            changed_at=now,
+        )
+    )
 
 
 async def _get_or_create_profile(patient: User, db: AsyncSession) -> HealthProfile:
-    result = await db.execute(
-        select(HealthProfile).where(HealthProfile.user_id == str(patient.id))
-    )
+    result = await db.execute(select(HealthProfile).where(HealthProfile.user_id == str(patient.id)))
     profile = result.scalar_one_or_none()
     if not profile:
         profile = HealthProfile(user_id=str(patient.id))
