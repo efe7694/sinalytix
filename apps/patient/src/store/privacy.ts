@@ -188,10 +188,15 @@ export const usePrivacyStore = create<PrivacyState & PrivacyActions>((set, get) 
     try {
       await coreApi.post(`/emergency-contacts/${ecId}/verify-phone`, { action: 'request_code' });
     } catch (err) {
-      set({
-        verifyError: err instanceof ApiError ? err.message : 'Kod gönderilemedi.',
-        verifyRetryAfterSeconds: err instanceof ApiError ? (err.retryAfterSeconds ?? null) : null,
-      });
+      // Guard against a late failure for a contact the user has since
+      // switched away from (or closed the modal for) overwriting the
+      // currently-open modal's error state.
+      if (get().verifyingEcId === ecId) {
+        set({
+          verifyError: err instanceof ApiError ? err.message : 'Kod gönderilemedi.',
+          verifyRetryAfterSeconds: err instanceof ApiError ? (err.retryAfterSeconds ?? null) : null,
+        });
+      }
       throw err;
     }
   },
@@ -205,13 +210,18 @@ export const usePrivacyStore = create<PrivacyState & PrivacyActions>((set, get) 
       });
       set((s) => ({
         emergencyContacts: s.emergencyContacts.map((ec) => (ec.ec_id === ecId ? updated : ec)),
-        verifyingEcId: null,
+        // Only close the modal if it's still open for this same contact —
+        // a late success for a contact the user switched away from must not
+        // force-close whichever modal is open now.
+        verifyingEcId: s.verifyingEcId === ecId ? null : s.verifyingEcId,
       }));
     } catch (err) {
-      set({
-        verifyError: err instanceof ApiError ? err.message : 'Kod hatalı.',
-        verifyRetryAfterSeconds: err instanceof ApiError ? (err.retryAfterSeconds ?? null) : null,
-      });
+      if (get().verifyingEcId === ecId) {
+        set({
+          verifyError: err instanceof ApiError ? err.message : 'Kod hatalı.',
+          verifyRetryAfterSeconds: err instanceof ApiError ? (err.retryAfterSeconds ?? null) : null,
+        });
+      }
       throw err;
     }
   },

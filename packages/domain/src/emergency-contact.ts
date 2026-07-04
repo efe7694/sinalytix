@@ -33,7 +33,16 @@ export const UpdateEmergencyContactRequestSchema = z
 export type UpdateEmergencyContactRequest = z.infer<typeof UpdateEmergencyContactRequestSchema>;
 
 export const ReorderEmergencyContactsRequestSchema = z.object({
-  ordered_ids: z.array(z.string().uuid()).min(1).max(3),
+  ordered_ids: z
+    .array(z.string().uuid())
+    .min(1)
+    .max(3)
+    // Without this, a duplicate id (e.g. [A, A]) passes the service's
+    // length+membership ownership check while silently omitting another
+    // owned contact from the reorder — found by an adversarial PR review,
+    // reproduced against a live DB (the omitted contact's sort_order was
+    // left untouched, no error).
+    .refine((ids) => new Set(ids).size === ids.length, 'ordered_ids yinelenen id içeremez.'),
 });
 export type ReorderEmergencyContactsRequest = z.infer<typeof ReorderEmergencyContactsRequestSchema>;
 

@@ -145,7 +145,7 @@ export class EmergencyContactsService {
     return withRlsContext(this.db, { actingUserId }, async (trx) => {
       const existing = await trx
         .selectFrom('emergency_contacts')
-        .select(['ec_id', 'phone'])
+        .select(['ec_id', 'patient_id', 'phone'])
         .where('ec_id', '=', ecId)
         .where('deleted_at', 'is', null)
         .executeTakeFirst();
@@ -154,6 +154,23 @@ export class EmergencyContactsService {
       }
 
       const phoneChanged = body.phone !== undefined && body.phone !== existing.phone;
+      if (phoneChanged) {
+        // Same conflict create() already guards against — without it, this
+        // falls through to a raw DB unique-constraint error (500) instead of
+        // a clean 409 for the identical logical case (found by an
+        // adversarial PR review).
+        const duplicatePhone = await trx
+          .selectFrom('emergency_contacts')
+          .select('ec_id')
+          .where('patient_id', '=', existing.patient_id)
+          .where('phone', '=', body.phone as string)
+          .where('deleted_at', 'is', null)
+          .where('ec_id', '!=', ecId)
+          .executeTakeFirst();
+        if (duplicatePhone) {
+          throw ProblemException.conflict('Bu telefon numarası zaten acil kişi listesinde.');
+        }
+      }
       const row = await trx
         .updateTable('emergency_contacts')
         .set({
@@ -207,7 +224,17 @@ export class EmergencyContactsService {
         .where('deleted_at', 'is', null)
         .execute();
       const ownedIds = new Set(owned.map((r) => r.ec_id));
-      if (orderedIds.length !== ownedIds.size || !orderedIds.every((id) => ownedIds.has(id))) {
+      const distinctOrderedIds = new Set(orderedIds);
+      // Checked independently of the DTO's own `.refine` (packages/domain) —
+      // a duplicate id (e.g. [A, A]) would otherwise pass this length+
+      // membership check while silently omitting another owned contact from
+      // the reorder (found by an adversarial PR review, reproduced live: the
+      // omitted contact's sort_order was left untouched, no error thrown).
+      if (
+        distinctOrderedIds.size !== orderedIds.length ||
+        orderedIds.length !== ownedIds.size ||
+        !orderedIds.every((id) => ownedIds.has(id))
+      ) {
         throw ProblemException.badRequest('ordered_ids hastanın mevcut acil kişi kümesiyle birebir eşleşmeli.');
       }
 
@@ -266,6 +293,24 @@ export class EmergencyContactsService {
   }
 
   async confirmPhoneVerification(ecId: string, actingUserId: string, code: string): Promise<EmergencyContactPublic> {
+    // Ownership check must happen before any Redis read/write (unlike the
+    // rate-limit/lockout checks below) — otherwise anyone who merely learns
+    // an ec_id they don't own can pollute/exhaust its fail-count and lock
+    // the real owner out of verifying, without RLS ever being consulted
+    // (found by an adversarial PR review; mirrors requestPhoneVerification's
+    // existing ordering).
+    const owned = await withRlsContext(this.db, { actingUserId }, (trx) =>
+      trx
+        .selectFrom('emergency_contacts')
+        .select('ec_id')
+        .where('ec_id', '=', ecId)
+        .where('deleted_at', 'is', null)
+        .executeTakeFirst(),
+    );
+    if (!owned) {
+      throw ProblemException.notFound();
+    }
+
     const locked = await this.redis.get(lockoutKey(ecId));
     if (locked) {
       throw ProblemException.tooManyRequests('Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.', VERIFY_LOCKOUT_SECONDS);

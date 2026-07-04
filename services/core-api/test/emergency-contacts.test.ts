@@ -131,6 +131,13 @@ describe('EmergencyContactsService (Module 2 §3.3, Faz 1 Slice 2)', () => {
       const ec = await service.create(patient.user_id, patient.user_id, baseInput);
       await expect(service.update(ec.ec_id, stranger.user_id, { relationship: 'parent' })).rejects.toMatchObject({ status: 404 });
     });
+
+    it('rejects changing phone to one already used by another active contact (409, matches create())', async () => {
+      const patient = await makePatient();
+      const first = await service.create(patient.user_id, patient.user_id, { ...baseInput, phone: '+14165550001' });
+      const second = await service.create(patient.user_id, patient.user_id, { ...baseInput, phone: '+14165550002' });
+      await expect(service.update(second.ec_id, patient.user_id, { phone: first.phone })).rejects.toMatchObject({ status: 409 });
+    });
   });
 
   describe('remove()', () => {
@@ -189,6 +196,19 @@ describe('EmergencyContactsService (Module 2 §3.3, Faz 1 Slice 2)', () => {
         service.reorder(patient.user_id, patient.user_id, [first.ec_id, '00000000-0000-0000-0000-000000000000']),
       ).rejects.toMatchObject({ status: 400 });
     });
+
+    it('rejects a duplicate id instead of silently leaving another owned contact untouched (regression)', async () => {
+      const patient = await makePatient();
+      const first = await service.create(patient.user_id, patient.user_id, { ...baseInput, phone: '+14165550001' });
+      const second = await service.create(patient.user_id, patient.user_id, { ...baseInput, phone: '+14165550002' });
+      await expect(
+        service.reorder(patient.user_id, patient.user_id, [first.ec_id, first.ec_id]),
+      ).rejects.toMatchObject({ status: 400 });
+
+      // Confirms it's rejected outright, not silently applied — second's slot is untouched.
+      const list = await service.list(patient.user_id, patient.user_id);
+      expect(list.find((ec) => ec.ec_id === second.ec_id)?.sort_order).toBe(2);
+    });
   });
 
   describe('phone verification', () => {
@@ -231,6 +251,20 @@ describe('EmergencyContactsService (Module 2 §3.3, Faz 1 Slice 2)', () => {
         await service.requestPhoneVerification(ec.ec_id, patient.user_id);
       }
       await expect(service.requestPhoneVerification(ec.ec_id, patient.user_id)).rejects.toMatchObject({ status: 429 });
+    });
+
+    it('a stranger confirming a contact they cannot see gets 404, before any Redis fail-count is touched (regression)', async () => {
+      const patient = await makePatient();
+      const stranger = await makePatient();
+      const ec = await service.create(patient.user_id, patient.user_id, baseInput);
+      await seedCode(redis, ec.ec_id, '111111');
+
+      await expect(service.confirmPhoneVerification(ec.ec_id, stranger.user_id, '000000')).rejects.toMatchObject({ status: 404 });
+
+      // The owner's own correct code still works — a non-owner's guess must
+      // not have polluted this ec_id's fail-count/lockout bucket.
+      const confirmed = await service.confirmPhoneVerification(ec.ec_id, patient.user_id, '111111');
+      expect(confirmed.phone_verified).toBe(true);
     });
   });
 });
