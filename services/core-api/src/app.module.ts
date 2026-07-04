@@ -3,8 +3,9 @@ import { DbModule } from './common/db.module';
 import { RedisModule } from './common/redis.module';
 import { AuthModule } from './auth/auth.module';
 import { ConsentGrantsModule } from './consent-grants/consent-grants.module';
+import { EmergencyContactsModule } from './emergency-contacts/emergency-contacts.module';
 
 @Module({
-  imports: [DbModule, RedisModule, AuthModule, ConsentGrantsModule],
+  imports: [DbModule, RedisModule, AuthModule, ConsentGrantsModule, EmergencyContactsModule],
 })
 export class AppModule {}

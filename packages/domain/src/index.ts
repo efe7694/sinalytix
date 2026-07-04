@@ -12,4 +12,5 @@ export * from './errors';
 export * from './user';
 export * from './consent';
 export * from './consent-grant';
+export * from './emergency-contact';
 export * from './pagination';

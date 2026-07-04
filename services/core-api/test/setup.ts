@@ -79,6 +79,7 @@ export async function setupTestDatabase(): Promise<TestDbHandles> {
 }
 
 const DOMAIN_TABLES = [
+  'emergency_contacts',
   'consent_grants',
   'sdm_declarations',
   'policy_decisions',

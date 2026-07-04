@@ -85,23 +85,20 @@ type InviteStatus = EmergencyContact['invite_status'];
 
 const INVITE_LABELS: Record<InviteStatus, string> = {
   pending: 'Davet Bekleniyor',
-  app_user: 'Uygulama Kullanıcısı',
-  phone_only: 'Yalnızca Telefon',
-  pending_verification: 'Doğrulama Bekliyor',
+  accepted_app_user: 'Uygulama Kullanıcısı',
+  accepted_phone_only: 'Yalnızca Telefon',
 };
 
 const INVITE_BG: Record<InviteStatus, string> = {
   pending: '#FEF3C7',
-  app_user: '#DCFCE7',
-  phone_only: COLORS.surface,
-  pending_verification: COLORS.warningLight,
+  accepted_app_user: '#DCFCE7',
+  accepted_phone_only: COLORS.surface,
 };
 
 const INVITE_TEXT: Record<InviteStatus, string> = {
   pending: '#92400E',
-  app_user: '#166534',
-  phone_only: COLORS.textSecondary,
-  pending_verification: '#9A3412',
+  accepted_app_user: '#166534',
+  accepted_phone_only: COLORS.textSecondary,
 };
 
 function InviteChip({ status }: { status: InviteStatus }) {
@@ -121,6 +118,7 @@ function ECRow({
   onMoveUp,
   onMoveDown,
   onRemove,
+  onVerifyPhone,
 }: {
   ec: EmergencyContact;
   index: number;
@@ -128,6 +126,7 @@ function ECRow({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onRemove: () => void;
+  onVerifyPhone: () => void;
 }) {
   const priority = index + 1;
   const isFirst = index === 0;
@@ -142,9 +141,16 @@ function ECRow({
       </View>
 
       <View style={styles.ecInfo}>
-        <Text style={styles.ecName}>{ec.name}</Text>
+        <Text style={styles.ecName}>{ec.first_name} {ec.last_name}</Text>
         <Text style={styles.ecRelationship}>{ec.relationship}</Text>
-        <InviteChip status={ec.invite_status} />
+        <View style={styles.ecChipRow}>
+          <InviteChip status={ec.invite_status} />
+          {!ec.phone_verified && (
+            <TouchableOpacity onPress={onVerifyPhone} style={[styles.chip, styles.verifyChip]}>
+              <Text style={[styles.chipText, { color: COLORS.error }]}>Telefonu Doğrula</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <View style={styles.ecActions}>
@@ -192,14 +198,16 @@ function AddECModal({
   visible: boolean;
   saving: boolean;
   onClose: () => void;
-  onSubmit: (name: string, relationship: string, phone: string) => void;
+  onSubmit: (firstName: string, lastName: string, relationship: string, phone: string) => void;
 }) {
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [relationship, setRelationship] = useState('');
   const [phone, setPhone] = useState('');
 
   function reset() {
-    setName('');
+    setFirstName('');
+    setLastName('');
     setRelationship('');
     setPhone('');
   }
@@ -210,14 +218,15 @@ function AddECModal({
   }
 
   function handleSubmit() {
-    const n = name.trim();
+    const fn = firstName.trim();
+    const ln = lastName.trim();
     const r = relationship.trim();
     const p = phone.trim();
-    if (!n || !r || !p) {
+    if (!fn || !ln || !r || !p) {
       Alert.alert('Eksik Alan', 'Lütfen tüm alanları doldurun.');
       return;
     }
-    onSubmit(n, r, p);
+    onSubmit(fn, ln, r, p);
     reset();
   }
 
@@ -233,12 +242,25 @@ function AddECModal({
 
         <View style={styles.modalBody}>
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Ad Soyad</Text>
+            <Text style={styles.fieldLabel}>Ad</Text>
             <TextInput
               style={styles.textInput}
-              value={name}
-              onChangeText={setName}
-              placeholder="Örn: Ayşe Yılmaz"
+              value={firstName}
+              onChangeText={setFirstName}
+              placeholder="Örn: Ayşe"
+              placeholderTextColor={COLORS.textDisabled}
+              autoCapitalize="words"
+              returnKeyType="next"
+            />
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Soyad</Text>
+            <TextInput
+              style={styles.textInput}
+              value={lastName}
+              onChangeText={setLastName}
+              placeholder="Örn: Yılmaz"
               placeholderTextColor={COLORS.textDisabled}
               autoCapitalize="words"
               returnKeyType="next"
@@ -291,6 +313,95 @@ function AddECModal({
   );
 }
 
+function VerifyPhoneModal({
+  ec,
+  saving,
+  error,
+  retryAfterSeconds,
+  onRequestCode,
+  onConfirmCode,
+  onClose,
+}: {
+  ec: EmergencyContact | null;
+  saving: boolean;
+  error: string | null;
+  retryAfterSeconds: number | null;
+  onRequestCode: () => void;
+  onConfirmCode: (code: string) => void;
+  onClose: () => void;
+}) {
+  const [code, setCode] = useState('');
+
+  useEffect(() => {
+    if (ec) setCode('');
+  }, [ec]);
+
+  if (!ec) return null;
+
+  function handleSubmit() {
+    const c = code.trim();
+    if (c.length !== 6) {
+      Alert.alert('Eksik Kod', 'Lütfen 6 haneli kodu girin.');
+      return;
+    }
+    onConfirmCode(c);
+  }
+
+  return (
+    <Modal visible={ec !== null} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={styles.modalContainer}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Telefonu Doğrula</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.modalBody}>
+          <Text style={styles.verifyIntro}>
+            {ec.first_name} {ec.last_name} ({ec.phone}) numarasına gönderilen 6 haneli kodu girin.
+          </Text>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Doğrulama Kodu</Text>
+            <TextInput
+              style={styles.textInput}
+              value={code}
+              onChangeText={setCode}
+              placeholder="000000"
+              placeholderTextColor={COLORS.textDisabled}
+              keyboardType="number-pad"
+              maxLength={6}
+              returnKeyType="done"
+            />
+          </View>
+
+          {error && <Text style={styles.verifyError}>{error}{retryAfterSeconds ? ` (${retryAfterSeconds}s)` : ''}</Text>}
+
+          <TouchableOpacity onPress={onRequestCode} disabled={saving}>
+            <Text style={styles.verifyResendText}>Kodu tekrar gönder</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.modalFooter}>
+          <TouchableOpacity
+            style={[styles.primaryBtn, saving && styles.primaryBtnDisabled]}
+            onPress={handleSubmit}
+            disabled={saving}
+            activeOpacity={0.8}
+          >
+            {saving ? (
+              <ActivityIndicator color={COLORS.background} size="small" />
+            ) : (
+              <Text style={styles.primaryBtnText}>Doğrula</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function FamilyRow({
   fc,
   onDisconnect,
@@ -329,10 +440,16 @@ export default function PrivacyScreen() {
     preferences,
     loading,
     saving,
+    verifyingEcId,
+    verifyError,
+    verifyRetryAfterSeconds,
     loadPrivacyData,
     addEmergencyContact,
     removeEmergencyContact,
     reorderEmergencyContacts,
+    requestPhoneVerification,
+    confirmPhoneVerification,
+    cancelPhoneVerification,
     generateCaregiverCode,
     unlinkCaregiver,
     disconnectFamily,
@@ -340,12 +457,14 @@ export default function PrivacyScreen() {
   } = usePrivacyStore();
 
   const [addModalVisible, setAddModalVisible] = useState(false);
+  const [verifyingSubmit, setVerifyingSubmit] = useState(false);
 
   useEffect(() => {
     loadPrivacyData();
   }, []);
 
   const sortedECs = [...emergencyContacts].sort((a, b) => a.sort_order - b.sort_order);
+  const verifyingEc = emergencyContacts.find((ec) => ec.ec_id === verifyingEcId) ?? null;
 
   function handleReorder(index: number, direction: 'up' | 'down') {
     const arr = [...sortedECs];
@@ -357,7 +476,7 @@ export default function PrivacyScreen() {
   function handleRemoveEC(ec: EmergencyContact) {
     Alert.alert(
       'Acil Kişiyi Kaldır',
-      `${ec.name} kişisini acil listesinden kaldırmak istiyor musunuz?`,
+      `${ec.first_name} ${ec.last_name} kişisini acil listesinden kaldırmak istiyor musunuz?`,
       [
         { text: 'Vazgeç', style: 'cancel' },
         {
@@ -369,12 +488,41 @@ export default function PrivacyScreen() {
     );
   }
 
-  async function handleAddEC(name: string, relationship: string, phone: string) {
+  async function handleAddEC(firstName: string, lastName: string, relationship: string, phone: string) {
     try {
-      await addEmergencyContact({ name, relationship, phone });
+      await addEmergencyContact({ first_name: firstName, last_name: lastName, relationship, phone });
       setAddModalVisible(false);
     } catch {
       Alert.alert('Hata', 'Acil kişi eklenirken bir sorun oluştu.');
+    }
+  }
+
+  async function handleVerifyPhone(ec: EmergencyContact) {
+    try {
+      await requestPhoneVerification(ec.ec_id);
+    } catch {
+      // requestPhoneVerification already stores verifyError for the modal to show.
+    }
+  }
+
+  async function handleResendCode() {
+    if (!verifyingEcId) return;
+    try {
+      await requestPhoneVerification(verifyingEcId);
+    } catch {
+      // error surfaced via verifyError in the modal
+    }
+  }
+
+  async function handleConfirmCode(code: string) {
+    if (!verifyingEcId) return;
+    setVerifyingSubmit(true);
+    try {
+      await confirmPhoneVerification(verifyingEcId, code);
+    } catch {
+      // error surfaced via verifyError in the modal
+    } finally {
+      setVerifyingSubmit(false);
     }
   }
 
@@ -509,6 +657,7 @@ export default function PrivacyScreen() {
                     onMoveUp={() => handleReorder(index, 'up')}
                     onMoveDown={() => handleReorder(index, 'down')}
                     onRemove={() => handleRemoveEC(ec)}
+                    onVerifyPhone={() => handleVerifyPhone(ec)}
                   />
                 </View>
               ))
@@ -625,6 +774,16 @@ export default function PrivacyScreen() {
         saving={saving}
         onClose={() => setAddModalVisible(false)}
         onSubmit={handleAddEC}
+      />
+
+      <VerifyPhoneModal
+        ec={verifyingEc}
+        saving={verifyingSubmit}
+        error={verifyError}
+        retryAfterSeconds={verifyRetryAfterSeconds}
+        onRequestCode={handleResendCode}
+        onConfirmCode={handleConfirmCode}
+        onClose={cancelPhoneVerification}
       />
     </>
   );
@@ -765,6 +924,17 @@ const styles = StyleSheet.create({
   ecRelationship: {
     fontSize: FONT_SIZE.CAPTION,
     color: COLORS.textSecondary,
+  },
+  ecChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.XS,
+    flexWrap: 'wrap',
+  },
+  verifyChip: {
+    borderWidth: 1,
+    borderColor: COLORS.error,
+    backgroundColor: COLORS.background,
   },
   ecActions: {
     flexDirection: 'row',
@@ -1002,5 +1172,22 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.BODY,
     color: COLORS.textPrimary,
     backgroundColor: COLORS.surface,
+  },
+
+  // Verify-phone modal
+  verifyIntro: {
+    fontSize: FONT_SIZE.BODY,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  verifyError: {
+    fontSize: FONT_SIZE.CAPTION,
+    color: COLORS.error,
+  },
+  verifyResendText: {
+    fontSize: FONT_SIZE.BODY,
+    fontWeight: '600',
+    color: COLORS.primary,
+    textAlign: 'center',
   },
 });
