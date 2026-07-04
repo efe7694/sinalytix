@@ -54,6 +54,9 @@ export default function SinaScreen() {
     setIsSending(true);
 
     try {
+      // NOTE: the old backend's /family/sina/chat handler intentionally
+      // raises 501 Not Implemented (family AI chat is Faz 6/AI scope in the
+      // new backend) — this call is expected to fail today, not an oversight.
       const response = await api.post<{
         content: string;
         is_flagged: boolean;

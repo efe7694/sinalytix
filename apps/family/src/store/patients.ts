@@ -35,6 +35,13 @@ export const usePatientsStore = create<PatientsState>((set, get) => ({
   activeSOS: null,
   isLoading: false,
 
+  // NOTE: /family/patients has no matching route in the old backend today —
+  // only /caregiver/patients exists, and that's CaregiverLink-backed, not
+  // PatientFamilyLink (wrong domain entirely, not swappable). This needs a
+  // real family-scoped "linked patients" endpoint, which naturally lands in
+  // the new backend's Faz 1 (PatientFamilyLink/FamilyLinkCode) rather than
+  // being retrofitted into a backend that's being retired. Known-broken
+  // until then, not an oversight.
   fetchPatients: async () => {
     set({ isLoading: true });
     try {
