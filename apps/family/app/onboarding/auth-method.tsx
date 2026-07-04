@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { useAuthStore } from '@/store/auth';
-import { useOnboardingStore } from '@/store/onboarding';
 import { api } from '@/lib/api';
 
 const BRAND = '#6366F1';
@@ -14,7 +13,6 @@ WebBrowser.maybeCompleteAuthSession();
 export default function AuthMethodScreen() {
   const router = useRouter();
   const { setTokens } = useAuthStore();
-  const { draft } = useOnboardingStore();
 
   const handleApple = async () => {
     try {
@@ -24,9 +22,10 @@ export default function AuthMethodScreen() {
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
       });
-      const res = await api.post<{ access_token: string }>('/family/auth/apple', {
+      const res = await api.post<{ access_token: string }>('/api/v1/auth/apple', {
         identity_token: credential.identityToken,
-        draft,
+        given_name: credential.fullName?.givenName ?? undefined,
+        family_name: credential.fullName?.familyName ?? undefined,
       });
       await setTokens(res.access_token);
       router.replace('/onboarding/connect');

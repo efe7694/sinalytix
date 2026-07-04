@@ -54,6 +54,12 @@ export default function SinaScreen() {
     setIsSending(true);
 
     try {
+      // NOTE: this path doesn't match any registered backend route (the old
+      // backend only has POST /family/sina/chat, no {patient_id} segment) —
+      // it 404s today. Even if it were pointed at the right path, that
+      // handler intentionally raises 501 Not Implemented (family AI chat is
+      // Faz 6/AI scope in the new backend), so this call is expected to fail
+      // either way — not an oversight, not worth patching in a retiring backend.
       const response = await api.post<{
         content: string;
         is_flagged: boolean;

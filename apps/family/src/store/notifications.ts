@@ -37,12 +37,14 @@ export const useNotificationsStore = create<NotificationsState>((set) => ({
   unreadCount: 0,
   isLoading: false,
 
-  fetchNotifications: async (patientId) => {
+  // Old backend's /api/v1/notifications is not patient-scoped — it returns the
+  // signed-in user's own notifications across all linked patients. `patientId`
+  // is kept in the signature to avoid touching call sites; real per-patient
+  // scoping needs a backend change (Notification.patient_context_id, C21).
+  fetchNotifications: async (_patientId) => {
     set({ isLoading: true });
     try {
-      const notifications = await api.get<InAppNotification[]>(
-        `/family/patients/${patientId}/notifications`,
-      );
+      const notifications = await api.get<InAppNotification[]>('/api/v1/notifications');
       const unreadCount = notifications.filter((n) => !n.is_read).length;
       set({ notifications, unreadCount });
     } catch {
@@ -52,8 +54,8 @@ export const useNotificationsStore = create<NotificationsState>((set) => ({
     }
   },
 
-  markAllRead: async (patientId) => {
-    await api.post(`/family/patients/${patientId}/notifications/read-all`, {}).catch(() => {});
+  markAllRead: async (_patientId) => {
+    await api.post('/api/v1/notifications/read-all', {}).catch(() => {});
     set((s) => ({
       notifications: s.notifications.map((n) => ({ ...n, is_read: true })),
       unreadCount: 0,

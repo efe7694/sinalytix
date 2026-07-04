@@ -21,6 +21,11 @@ export default function ConnectScreen() {
   // If Akış A (deep link patient_id exists), show auto-connect UI
   const isFlowA = !!draft.pending_patient_id;
 
+  // NOTE: /family/patients/link has no matching route in the old backend —
+  // there's no family-scoped patient-link endpoint, only /caregiver/patients/link
+  // (CaregiverLink-backed, wrong domain). Both handlers below will fail and
+  // fall through to the "Şimdilik Geç" skip path until the new backend's Faz 1
+  // (PatientFamilyLink/FamilyLinkCode) ships — known-broken, not an oversight.
   const handleAutoConnect = async () => {
     if (!draft.pending_patient_id) return;
     setIsLoading(true);
