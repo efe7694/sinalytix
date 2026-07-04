@@ -1,9 +1,10 @@
 /**
  * Canonical enums — mirrors Sinalytix_Canonical_Data_Dictionary__R2.md exactly.
  *
- * Scope: Faz 0 (identity, session, consent-record) only. Later phases add
- * their own enum files here as the corresponding tables are migrated
- * (do not pre-declare enums for tables that don't exist in packages/db yet).
+ * Scope: Faz 0 (identity, session, consent-record) + Faz 1 (consent grant,
+ * link fabric) so far. Later phases add their own enum files here as the
+ * corresponding tables are migrated (do not pre-declare enums for tables
+ * that don't exist in packages/db yet).
  */
 
 // ── User (Dictionary §1) ────────────────────────────────
@@ -112,3 +113,70 @@ export const ConsentFlag = {
   ACK_AI_PROCESSING: 'ack_ai_processing',
 } as const;
 export type ConsentFlag = (typeof ConsentFlag)[keyof typeof ConsentFlag];
+
+// ── ConsentGrant (Dictionary §2/§4.2, B2/B5/C13/C16) ─────
+
+/** Non-lockbox scope categories. `genetic` is V2 (sensitive, non-lockbox) —
+ * excluded until that phase. `ai_processing` is the runtime AI-consent
+ * mirror (C16 — there is no separate `ai_consent_record` table). */
+export const ConsentCategory = {
+  MEDICATIONS: 'medications',
+  LABS: 'labs',
+  IMAGING: 'imaging',
+  DEMOGRAPHIC: 'demographic',
+  AI_PROCESSING: 'ai_processing',
+} as const;
+export type ConsentCategory = (typeof ConsentCategory)[keyof typeof ConsentCategory];
+
+/** Lockbox categories (B5) — default-hidden, each needs its own explicit
+ * grant, never inherited from a baseline grant. Mirrors
+ * @sinalytix/policy-engine's LOCKBOX_CATEGORIES; kept as a separate domain
+ * enum (not imported from policy-engine) since that package is intentionally
+ * dependency-free and this one is the wire-contract source of truth. */
+export const LockboxCategory = {
+  MENTAL_HEALTH: 'mental_health',
+  HIV_STI: 'hiv_sti',
+  GENDER_IDENTITY: 'gender_identity',
+  SUBSTANCE_USE: 'substance_use',
+} as const;
+export type LockboxCategory = (typeof LockboxCategory)[keyof typeof LockboxCategory];
+
+export const GrantedToKind = {
+  PRACTITIONER_ROLE: 'practitioner_role',
+  ORG: 'org',
+  FAMILY_MEMBER: 'family_member',
+  CAREGIVER: 'caregiver',
+  SYSTEM: 'system',
+} as const;
+export type GrantedToKind = (typeof GrantedToKind)[keyof typeof GrantedToKind];
+
+export const Permission = {
+  PERMIT: 'permit',
+  DENY: 'deny',
+} as const;
+export type Permission = (typeof Permission)[keyof typeof Permission];
+
+// ── PatientFamilyLink / CaregiverLink (Dictionary §4, C13/C22) ──
+
+export const LinkPermissionLevel = {
+  VIEW: 'view',
+  EDIT: 'edit',
+  FULL: 'full',
+} as const;
+export type LinkPermissionLevel = (typeof LinkPermissionLevel)[keyof typeof LinkPermissionLevel];
+
+/** `PatientFamilyLink.status` — `CaregiverLink` has its own distinct status
+ * set (pending/linked/expired/unlinked), defined where that table lands. */
+export const FamilyLinkStatus = {
+  PENDING_PATIENT_CONFIRM: 'pending_patient_confirm',
+  ACTIVE: 'active',
+  REVOKED: 'revoked',
+} as const;
+export type FamilyLinkStatus = (typeof FamilyLinkStatus)[keyof typeof FamilyLinkStatus];
+
+export const FamilyLinkSource = {
+  EC_INVITE: 'ec_invite',
+  CODE: 'code',
+  QR: 'qr',
+} as const;
+export type FamilyLinkSource = (typeof FamilyLinkSource)[keyof typeof FamilyLinkSource];
