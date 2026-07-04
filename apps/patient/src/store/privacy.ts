@@ -1,18 +1,21 @@
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, coreApi } from '@/lib/api';
+import { useAuthStore } from '@/store/auth';
 import { create } from 'zustand';
 
 export interface EmergencyContact {
   ec_id: string;
-  name: string;
+  first_name: string;
+  last_name: string;
   relationship: string;
   phone: string;
   phone_verified: boolean;
   sort_order: number;
-  invite_status: 'pending' | 'app_user' | 'phone_only' | 'pending_verification';
+  invite_status: 'pending' | 'accepted_app_user' | 'accepted_phone_only';
 }
 
 export interface CreateECInput {
-  name: string;
+  first_name: string;
+  last_name: string;
   relationship: string;
   phone: string;
 }
@@ -47,6 +50,11 @@ interface PrivacyState {
   loading: boolean;
   saving: boolean;
   error: string | null;
+  /** ec_id currently mid phone-verify (request or confirm in flight). */
+  verifyingEcId: string | null;
+  verifyError: string | null;
+  /** Set from ApiError.retryAfterSeconds on a 429 — lets the UI show a countdown. */
+  verifyRetryAfterSeconds: number | null;
 }
 
 interface PrivacyActions {
@@ -54,10 +62,19 @@ interface PrivacyActions {
   addEmergencyContact(input: CreateECInput): Promise<void>;
   removeEmergencyContact(ecId: string): Promise<void>;
   reorderEmergencyContacts(orderedIds: string[]): Promise<void>;
+  requestPhoneVerification(ecId: string): Promise<void>;
+  confirmPhoneVerification(ecId: string, code: string): Promise<void>;
+  cancelPhoneVerification(): void;
   generateCaregiverCode(): Promise<void>;
   unlinkCaregiver(): Promise<void>;
   disconnectFamily(connectionId: string): Promise<void>;
   updatePreferences(patch: Partial<UserPreferences>): Promise<void>;
+}
+
+function patientId(): string {
+  const { userId } = useAuthStore.getState();
+  if (!userId) throw new Error('patientId() called with no authenticated user');
+  return userId;
 }
 
 const DEFAULT_PREFERENCES: UserPreferences = {
@@ -73,12 +90,15 @@ export const usePrivacyStore = create<PrivacyState & PrivacyActions>((set, get) 
   loading: false,
   saving: false,
   error: null,
+  verifyingEcId: null,
+  verifyError: null,
+  verifyRetryAfterSeconds: null,
 
   loadPrivacyData: async () => {
     set({ loading: true, error: null });
 
     const [ecResult, linkResult, familyResult, prefsResult] = await Promise.allSettled([
-      api.get<EmergencyContact[]>('/api/v1/emergency-contacts'),
+      coreApi.get<EmergencyContact[]>(`/patients/${patientId()}/emergency-contacts`),
       api.get<CaregiverLink | null>('/api/v1/caregiver/link'),
       api.get<FamilyConnection[]>('/api/v1/family-connections'),
       api.get<UserPreferences>('/api/v1/users/me/preferences'),
@@ -116,7 +136,7 @@ export const usePrivacyStore = create<PrivacyState & PrivacyActions>((set, get) 
   addEmergencyContact: async (input) => {
     set({ saving: true, error: null });
     try {
-      const created = await api.post<EmergencyContact>('/api/v1/emergency-contacts', input);
+      const created = await coreApi.post<EmergencyContact>(`/patients/${patientId()}/emergency-contacts`, input);
       set((s) => ({
         emergencyContacts: [...s.emergencyContacts, created],
         saving: false,
@@ -137,7 +157,7 @@ export const usePrivacyStore = create<PrivacyState & PrivacyActions>((set, get) 
     }));
 
     try {
-      await api.post(`/api/v1/emergency-contacts/${ecId}/remove`, {});
+      await coreApi.delete(`/emergency-contacts/${ecId}`);
     } catch (err) {
       set({ emergencyContacts: previous });
       throw err;
@@ -156,11 +176,48 @@ export const usePrivacyStore = create<PrivacyState & PrivacyActions>((set, get) 
     }));
 
     try {
-      await api.post('/api/v1/emergency-contacts/reorder', { ordered_ids: orderedIds });
+      await coreApi.post(`/patients/${patientId()}/emergency-contacts/reorder`, { ordered_ids: orderedIds });
     } catch (err) {
       set({ emergencyContacts: previous });
       throw err;
     }
+  },
+
+  requestPhoneVerification: async (ecId) => {
+    set({ verifyingEcId: ecId, verifyError: null, verifyRetryAfterSeconds: null });
+    try {
+      await coreApi.post(`/emergency-contacts/${ecId}/verify-phone`, { action: 'request_code' });
+    } catch (err) {
+      set({
+        verifyError: err instanceof ApiError ? err.message : 'Kod gönderilemedi.',
+        verifyRetryAfterSeconds: err instanceof ApiError ? (err.retryAfterSeconds ?? null) : null,
+      });
+      throw err;
+    }
+  },
+
+  confirmPhoneVerification: async (ecId, code) => {
+    set({ verifyError: null, verifyRetryAfterSeconds: null });
+    try {
+      const updated = await coreApi.post<EmergencyContact>(`/emergency-contacts/${ecId}/verify-phone`, {
+        action: 'verify_code',
+        code,
+      });
+      set((s) => ({
+        emergencyContacts: s.emergencyContacts.map((ec) => (ec.ec_id === ecId ? updated : ec)),
+        verifyingEcId: null,
+      }));
+    } catch (err) {
+      set({
+        verifyError: err instanceof ApiError ? err.message : 'Kod hatalı.',
+        verifyRetryAfterSeconds: err instanceof ApiError ? (err.retryAfterSeconds ?? null) : null,
+      });
+      throw err;
+    }
+  },
+
+  cancelPhoneVerification: () => {
+    set({ verifyingEcId: null, verifyError: null, verifyRetryAfterSeconds: null });
   },
 
   generateCaregiverCode: async () => {

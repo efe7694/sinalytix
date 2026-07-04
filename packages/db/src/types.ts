@@ -261,6 +261,27 @@ export interface ConsentGrantsTable {
   created_at: GeneratedTimestamp;
 }
 
+export interface EmergencyContactsTable {
+  ec_id: Generated<string>;
+  patient_id: string;
+  relationship: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  phone_verified: ColumnType<boolean, boolean | undefined, boolean>;
+  // Nullable so soft-delete can null it out, freeing the slot for the
+  // DEFERRABLE unique constraint without a partial WHERE (see migration
+  // 0010's comment) — always non-null on any row a caller reads back
+  // through the deleted_at IS NULL filter every query in this service uses.
+  sort_order: number | null;
+  invite_status: ColumnType<string, string | undefined, string>;
+  invite_sent_at: Timestamp | null;
+  invite_accepted_at: Timestamp | null;
+  linked_family_user_id: string | null;
+  created_at: GeneratedTimestamp;
+  deleted_at: Timestamp | null;
+}
+
 export interface Database {
   users: UsersTable;
   oauth_identities: OauthIdentitiesTable;
@@ -283,4 +304,5 @@ export interface Database {
   policy_decisions: PolicyDecisionsTable;
   sdm_declarations: SdmDeclarationsTable;
   consent_grants: ConsentGrantsTable;
+  emergency_contacts: EmergencyContactsTable;
 }
