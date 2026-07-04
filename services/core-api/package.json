@@ -41,9 +41,11 @@
     "@types/pg": "^8.11.10",
     "@types/uuid": "^10.0.0",
     "dotenv-cli": "^8.0.0",
+    "eslint": "^9.19.0",
     "light-my-request": "^6.4.0",
     "node-pg-migrate": "^7.9.1",
     "typescript": "^5.8.3",
+    "typescript-eslint": "^8.21.0",
     "unplugin-swc": "^1.5.9",
     "vitest": "^2.1.8"
   }
