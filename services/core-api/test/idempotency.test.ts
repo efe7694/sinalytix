@@ -30,13 +30,12 @@ describe('IdempotencyService (Module 2 §6.1)', () => {
   it('round-trips a stored response, including its body hash', async () => {
     const bodyHash = service.hashBody({ relationship: 'spouse' });
     await service.store('user-1', 'POST', '/v1/patients/p1/emergency-contacts', 'key-1', {
-      status: 201,
       body: { contact_id: 'ec-1' },
       bodyHash,
     });
 
     const cached = await service.getCached('user-1', 'POST', '/v1/patients/p1/emergency-contacts', 'key-1');
-    expect(cached).toEqual({ status: 201, body: { contact_id: 'ec-1' }, bodyHash });
+    expect(cached).toEqual({ body: { contact_id: 'ec-1' }, bodyHash });
   });
 
   it('produces the same hash for the same body and a different hash for a different body', () => {
@@ -49,9 +48,9 @@ describe('IdempotencyService (Module 2 §6.1)', () => {
 
   it('isolates cache entries per (user, method, path) even with the same key', async () => {
     const bodyHash = service.hashBody({});
-    await service.store('user-1', 'POST', '/v1/a', 'shared-key', { status: 200, body: 'a', bodyHash });
-    await service.store('user-1', 'POST', '/v1/b', 'shared-key', { status: 200, body: 'b', bodyHash });
-    await service.store('user-2', 'POST', '/v1/a', 'shared-key', { status: 200, body: 'user2', bodyHash });
+    await service.store('user-1', 'POST', '/v1/a', 'shared-key', { body: 'a', bodyHash });
+    await service.store('user-1', 'POST', '/v1/b', 'shared-key', { body: 'b', bodyHash });
+    await service.store('user-2', 'POST', '/v1/a', 'shared-key', { body: 'user2', bodyHash });
 
     expect((await service.getCached('user-1', 'POST', '/v1/a', 'shared-key'))?.body).toBe('a');
     expect((await service.getCached('user-1', 'POST', '/v1/b', 'shared-key'))?.body).toBe('b');
@@ -60,7 +59,7 @@ describe('IdempotencyService (Module 2 §6.1)', () => {
 
   it('sets a TTL on the stored key (24h retention window, Module 2 §6.1)', async () => {
     const bodyHash = service.hashBody({});
-    await service.store('user-1', 'POST', '/v1/a', 'key-ttl', { status: 200, body: {}, bodyHash });
+    await service.store('user-1', 'POST', '/v1/a', 'key-ttl', { body: {}, bodyHash });
     const ttl = await redis.ttl('idempotency:user-1:POST:/v1/a:key-ttl');
     expect(ttl).toBeGreaterThan(0);
     expect(ttl).toBeLessThanOrEqual(24 * 60 * 60);

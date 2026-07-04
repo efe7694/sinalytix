@@ -8,6 +8,17 @@
 
 import { isLockboxCategory } from './lockbox';
 
+/**
+ * `grantedToKind`/`grantedToId` are carried for the caller's own bookkeeping
+ * (e.g. building the `policy_decisions.context_snapshot`) — this module
+ * does NOT check them. The `grants` array passed to `evaluateScope`/
+ * `evaluateLockboxScope`/`evaluateAccess` below is trusted to already be
+ * pre-filtered to the requesting grantee (e.g. `WHERE granted_to_id = ?`)
+ * by the caller; this package has no DB access to verify that itself.
+ * Whichever slice adds the first real caller (ConsentGrant) must filter
+ * before calling in, not rely on this module to notice a stray grant row
+ * belonging to someone else.
+ */
 export interface ConsentGrantSnapshot {
   grantedToKind: string;
   grantedToId: string;

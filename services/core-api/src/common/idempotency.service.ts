@@ -8,7 +8,6 @@ import { sha256Hex } from './hash.util';
 const TTL_SECONDS = 24 * 60 * 60;
 
 export interface CachedIdempotentResponse {
-  status: number;
   body: unknown;
   bodyHash: string;
 }

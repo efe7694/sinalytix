@@ -1,17 +1,9 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
-import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
-import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import { Observable, from, of } from 'rxjs';
 import { switchMap, tap } from 'rxjs/operators';
 import { IdempotencyService } from './idempotency.service';
 import { ProblemException } from './problem.exception';
-
-/** Nest's own default when a route has no explicit `@HttpCode` (matches
- * `RouterExecutionContext`'s internal convention). */
-function defaultStatusFor(method: string): number {
-  return method.toUpperCase() === 'POST' ? 201 : 200;
-}
 
 /**
  * Module 2 §6.1 — mandatory `Idempotency-Key` on mutating routes. Apply with
@@ -20,13 +12,15 @@ function defaultStatusFor(method: string): number {
  * (reads `request.authContext.userId` — guards execute before interceptors
  * in Nest's request lifecycle, so this is always populated by the time we
  * get here).
+ *
+ * Only caches the response *body* — Nest sets the actual HTTP status from
+ * the route's own `@HttpCode()` metadata before any interceptor runs, on
+ * both a cache hit and a cache miss (same route, same metadata, either
+ * way), so there's nothing for this interceptor to separately track.
  */
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
-  constructor(
-    private readonly idempotencyService: IdempotencyService,
-    private readonly reflector: Reflector,
-  ) {}
+  constructor(private readonly idempotencyService: IdempotencyService) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
@@ -44,8 +38,6 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const method = request.method;
     const path = request.url;
     const bodyHash = this.idempotencyService.hashBody(request.body);
-    const status =
-      this.reflector.get<number>(HTTP_CODE_METADATA, context.getHandler()) ?? defaultStatusFor(method);
 
     return from(this.idempotencyService.getCached(userId, method, path, idempotencyKeyHeader)).pipe(
       switchMap((cached) => {
@@ -57,11 +49,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
         }
         return next.handle().pipe(
           tap((body) => {
-            void this.idempotencyService.store(userId, method, path, idempotencyKeyHeader, {
-              status,
-              body,
-              bodyHash,
-            });
+            void this.idempotencyService.store(userId, method, path, idempotencyKeyHeader, { body, bodyHash });
           }),
         );
       }),
