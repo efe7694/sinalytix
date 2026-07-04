@@ -16,11 +16,10 @@ export default function RootLayout() {
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuth = segments[0] === '(auth)';
     const inOnboarding = segments[0] === 'onboarding';
     const inMain = segments[0] === '(main)';
 
-    if (!isAuthenticated && !inAuth && !inOnboarding) {
+    if (!isAuthenticated && !inOnboarding) {
       router.replace('/onboarding/intro');
     } else if (isAuthenticated && !profile?.onboarding_completed_at && !inOnboarding) {
       router.replace('/onboarding/intro');

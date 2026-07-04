@@ -48,7 +48,7 @@ export default function SinaScreen() {
         id: 'welcome',
         role: 'assistant',
         content: patient
-          ? `Merhaba! Ben Sina. ${patient.display_name} hakkında soru sorabilir, bakım planını öğrenebilir veya vardiya notları oluşturabilirim.`
+          ? `Merhaba! Ben Sina. ${patient.first_name} ${patient.last_name} hakkında soru sorabilir, bakım planını öğrenebilir veya vardiya notları oluşturabilirim.`
           : 'Merhaba! Ben Sina. Bakım planı sorularınızda yardımcı olabilirim.',
         timestamp: new Date().toISOString(),
       },

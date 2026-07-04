@@ -16,13 +16,13 @@ export default function MainLayout() {
 
   useEffect(() => {
     fetchPatients();
-    fetchNotifications();
   }, []);
 
   useEffect(() => {
     if (selectedPatientId) {
       fetchTodayTasks(selectedPatientId);
       fetchDnd(selectedPatientId);
+      fetchNotifications(selectedPatientId);
     }
   }, [selectedPatientId]);
 
