@@ -7,17 +7,22 @@ export interface ProblemExceptionInit {
   status: number;
   detail: string;
   errors?: ProblemFieldError[];
+  /** Set on 429s (Module 2 §7.4) — `ProblemDetailsFilter` reads this and
+   * sets the actual `Retry-After` response header. */
+  retryAfterSeconds?: number;
 }
 
 /** RFC 7807 (application/problem+json) — Module 2 §1.4. */
 export class ProblemException extends HttpException {
   readonly problemType: string;
   readonly problemErrors?: ProblemFieldError[];
+  readonly retryAfterSeconds?: number;
 
   constructor(init: ProblemExceptionInit) {
     super({ title: init.title, detail: init.detail }, init.status);
     this.problemType = init.type;
     this.problemErrors = init.errors;
+    this.retryAfterSeconds = init.retryAfterSeconds;
   }
 
   static badRequest(detail: string): ProblemException {
@@ -75,11 +80,23 @@ export class ProblemException extends HttpException {
     });
   }
 
-  static tooManyRequests(detail: string): ProblemException {
+  static tooManyRequests(detail: string, retryAfterSeconds?: number): ProblemException {
     return new ProblemException({
       type: 'https://api.sinalytix.ca/errors/rate-limited',
       title: 'Çok fazla istek',
       status: 429,
+      detail,
+      retryAfterSeconds,
+    });
+  }
+
+  /** Module 2 §6.1: same Idempotency-Key + a different request body → 409,
+   * distinct from a plain domain-state conflict. */
+  static idempotencyKeyReuse(detail = 'Idempotency-Key aynı, istek gövdesi farklı.'): ProblemException {
+    return new ProblemException({
+      type: 'https://api.sinalytix.ca/errors/idempotency-key-reuse',
+      title: 'Idempotency-Key tekrar kullanıldı',
+      status: 409,
       detail,
     });
   }

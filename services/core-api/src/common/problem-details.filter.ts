@@ -28,6 +28,9 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         trace_id: String(traceId),
         errors: exception.problemErrors,
       };
+      if (exception.retryAfterSeconds !== undefined) {
+        reply.header('Retry-After', String(exception.retryAfterSeconds));
+      }
       reply.status(exception.getStatus()).send(body);
       return;
     }

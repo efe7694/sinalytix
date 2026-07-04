@@ -102,3 +102,21 @@ Both confirmed independently reproducible on plain `main` before any fix — nei
 Per the established review workflow, these went through their own branch → PR (#5) → independent-agent review (APPROVE, verified all claims by actually running the commands, including injecting and reverting a deliberate test failure and a deliberate type error) → merge into `main`, then `main` was re-synced into `faz-0-core-schema-identity` a second time (one expected, predicted conflict in `.github/workflows/ci.yml`, resolved by keeping both sides: PR #5's tolerant pytest step + this branch's renamed job title).
 
 All three CI jobs are now fully green on PR #1, verified both in CI and by running every workflow step's exact command locally.
+
+---
+
+## D9 — Faz 1 Slice 0: dual API clients (`api` + `coreApi`) instead of flipping the base URL wholesale
+
+**Faz 1's implementation plan called for** pointing each app's `src/lib/api.ts` `BASE_URL` at the new `services/core-api` (port 8080, `/v1/*` paths) as part of Slice 0's cross-app plumbing fixes (`X-App-Context` header, `Idempotency-Key`), with each domain's actual endpoint-path/shape rewiring deferred to its own later slice (Slice 2 = EmergencyContact, Slice 3 = PatientFamilyLink, Slice 4 = CaregiverLink).
+
+**Real gap found before writing any code:** every existing call site in all 3 apps (Patient/Family/Caregiver) — tasks, calls, messaging, notifications, health-profile, patient-linking, everything — targets the *old* Python backend's path convention (`/api/v1/...`, port 8000). Simply repointing `BASE_URL` at core-api would 404 every one of those calls immediately, not just the ones a later slice hasn't rewired yet — there is no way to "defer" endpoint-path fixes to their own slice if the shared base URL changes out from under every call at once.
+
+**Fix:** each app's `src/lib/api.ts` now exports **two** clients instead of one:
+- `api` — unchanged behavior, still targets the legacy backend (`BASE_URL`, no `X-App-Context`/`Idempotency-Key`, since the old FastAPI backend doesn't read either). Every screen keeps calling this until its own domain slice migrates it.
+- `coreApi` — new, targets `services/core-api` (`CORE_API_BASE_URL` = `.../v1`), sends `X-App-Context` + `Idempotency-Key` on mutating calls, and surfaces `Retry-After` via `ApiError.retryAfterSeconds` (Module 2 §6.1/§7.4).
+
+Each subsequent slice's frontend rewire switches its *specific* store's calls from `api` to `coreApi` (and updates the endpoint paths/shapes to match core-api's actual contract) — the two clients coexist for the remainder of the migration; `api` and its legacy-backend target only go away once every screen has been migrated, which is not this phase's job.
+
+**Also fixed in the same pass (pre-existing, unrelated to this migration):** none of the 3 apps' `ApiError`-equivalent types exposed the response body's other fields — `apps/caregiver/app/onboarding/phone.tsx:30` already read `e.body?.detail` off a caught error, relying on an untyped `Object.assign(new Error(...), {status, body})` shape; the new `ApiError` class keeps a typed `body` field so this call site keeps working, verified by grep before assuming it was safe to drop.
+
+**Verified end-to-end** (not just type-checked): started `core-api` locally, replayed the exact request the new `coreApi` client sends (`X-App-Context: patient` + OTP request/verify) against the running server, confirmed a 200 with a real token, then confirmed `X-App-Context` mismatch still correctly 403s. Hit one local-dev-only snag along the way — running the test suite (`pnpm test`) rotates the shared `sinalytix_app` Postgres role's password to match `.env.test` (via `test/setup.ts`'s `ensureAppRolePassword`), which leaves the separately-configured dev `.env`'s `APP_DATABASE_URL` stale until re-synced; not a code bug, just a local multi-environment-sharing-one-role quirk worth remembering next time `pnpm run dev` 500s right after a test run.
