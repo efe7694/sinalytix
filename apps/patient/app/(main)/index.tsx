@@ -183,7 +183,7 @@ export default function HomeScreen() {
           accessibilityRole="button"
         >
           <Ionicons name="mic-outline" size={24} color="#FFFFFF" />
-          <Text style={styles.btnSinaLabel}>Sina'ya Sor</Text>
+          <Text style={styles.btnSinaLabel}>Sina&apos;ya Sor</Text>
         </TouchableOpacity>
       </View>
 

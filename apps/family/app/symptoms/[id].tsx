@@ -126,7 +126,7 @@ export default function SymptomDetailScreen() {
               </View>
               <Text style={styles.aiSummaryText}>{report.ai_summary}</Text>
               <Text style={styles.aiDisclaimer}>
-                ⚠ Bu analiz tıbbi tavsiye niteliği taşımaz. Acil durum için 911'i arayın.
+                ⚠ Bu analiz tıbbi tavsiye niteliği taşımaz. Acil durum için 911&apos;i arayın.
               </Text>
             </View>
           )}
@@ -142,7 +142,7 @@ export default function SymptomDetailScreen() {
           {/* Emergency CTA */}
           <View style={styles.emergencyNote}>
             <Text style={styles.emergencyText}>
-              Belirtiler kötüleşirse veya acil bir durum varsa 911'i arayın.
+              Belirtiler kötüleşirse veya acil bir durum varsa 911&apos;i arayın.
             </Text>
           </View>
         </ScrollView>

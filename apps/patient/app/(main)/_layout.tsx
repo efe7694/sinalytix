@@ -5,9 +5,9 @@ import { COLORS, FONT_SIZE } from '@sinalytix/ui';
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 function tabIcon(active: IoniconName, inactive: IoniconName) {
-  return ({ color, focused }: { color: string; focused: boolean }) => (
-    <Ionicons name={focused ? active : inactive} size={24} color={color} />
-  );
+  return function TabIcon({ color, focused }: { color: string; focused: boolean }) {
+    return <Ionicons name={focused ? active : inactive} size={24} color={color} />;
+  };
 }
 
 export default function MainLayout() {

@@ -284,7 +284,7 @@ export default function AccountScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>Kalıcı Silme Onayı</Text>
-            <Text style={styles.modalInstruction}>"SİL" yazarak onaylayın</Text>
+            <Text style={styles.modalInstruction}>&quot;SİL&quot; yazarak onaylayın</Text>
             <TextInput
               style={styles.modalInput}
               value={deleteConfirmText}
