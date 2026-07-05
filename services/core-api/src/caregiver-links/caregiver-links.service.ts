@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import type { Database } from '@sinalytix/db';
 import {
   findCaregiverLinkByCode,
@@ -9,7 +9,11 @@ import {
   withRlsContext,
 } from '@sinalytix/db';
 import {
+  ApprovalActionType,
+  ApprovalStatus,
   CaregiverLinkStatus,
+  RequestedByRole,
+  type GatedActionResult,
   type GenerateCaregiverLinkCodeResponse,
   type LinkedPatientForCaregiver,
   type RedeemCaregiverLinkRequest,
@@ -18,6 +22,7 @@ import { KYSELY } from '../common/db.module';
 import { ProblemException } from '../common/problem.exception';
 import { randomToken } from '../common/hash.util';
 import { RedeemRateLimiter } from '../common/redeem-rate-limiter.service';
+import { ApprovalGateService } from '../approval-requests/approval-gate.service';
 
 const CODE_TTL_SECONDS = 15 * 60; // legacy parity: caregiver code valid 15 minutes
 const REDEEM_NAMESPACE = 'caregiver-link';
@@ -39,6 +44,7 @@ export class CaregiverLinksService {
   constructor(
     @Inject(KYSELY) private readonly db: Kysely<Database>,
     private readonly redeemRateLimiter: RedeemRateLimiter,
+    private readonly approvalGate: ApprovalGateService,
   ) {}
 
   // ── Patient side: generate / revoke a caregiver code ────────────────────
@@ -138,15 +144,69 @@ export class CaregiverLinksService {
     });
   }
 
-  /** Either party (patient or caregiver) ends an active link. Authorization
-   * is inside the SECURITY DEFINER function (it requires the actor to be one
-   * of the two parties); a non-party or already-unlinked link → 404. */
-  async unlink(linkId: string, actingUserId: string): Promise<void> {
-    await withRlsContext(this.db, { actingUserId }, async (trx) => {
-      const result = await unlinkCaregiverLink(trx, linkId, actingUserId);
-      if (!result) {
+  /**
+   * Either party ends an active link. A PATIENT unlinking their own caregiver
+   * runs immediately (their own decision). A CAREGIVER-initiated unlink is
+   * gated through the approval fabric (Faz 1 Slice 5): if the patient has
+   * configured `caregiver_link_change` to require approval and has eligible
+   * family approvers, it becomes a pending ApprovalRequest and does NOT take
+   * effect until a family member approves it — the family oversees who cares
+   * for the patient. Otherwise it runs immediately.
+   */
+  async unlink(linkId: string, actingUserId: string): Promise<GatedActionResult> {
+    return withRlsContext(this.db, { actingUserId }, async (trx) => {
+      // Both parties can SELECT the row (owner / caregiver_select policies); a
+      // stranger sees nothing → 404. Read it first to know who's unlinking.
+      const link = await trx
+        .selectFrom('caregiver_links')
+        .select(['patient_id', 'caregiver_id', 'status'])
+        .where('link_id', '=', linkId)
+        .executeTakeFirst();
+      if (!link || link.status !== CaregiverLinkStatus.LINKED) {
         throw ProblemException.notFound();
       }
+
+      const runUnlink = async (): Promise<void> => {
+        const result = await unlinkCaregiverLink(trx, linkId, actingUserId);
+        if (!result) {
+          throw ProblemException.notFound();
+        }
+      };
+
+      if (link.caregiver_id === actingUserId) {
+        // Reject a duplicate: if this caregiver already has a pending unlink
+        // request for THIS link, don't create a second one (the partial index
+        // is a non-unique lookup index; the target link_id lives in the jsonb
+        // payload, so dedup is enforced here, not by a constraint). The
+        // caregiver can read their own requests via RLS (requested_by = actor).
+        const existingPending = await trx
+          .selectFrom('approval_requests')
+          .select('approval_id')
+          .where('requested_by', '=', actingUserId)
+          .where('action_type', '=', ApprovalActionType.CAREGIVER_LINK_CHANGE)
+          .where('status', '=', ApprovalStatus.PENDING)
+          .where(sql<boolean>`action_payload->>'link_id' = ${linkId}`)
+          .executeTakeFirst();
+        if (existingPending) {
+          throw ProblemException.conflict('Bu bağlantı için zaten bekleyen bir onay talebi var.');
+        }
+
+        // Caregiver-initiated → gate. The stored payload carries the caregiver
+        // id so an approving family member's decision can re-run the unlink
+        // (via the SECURITY DEFINER function) as the caregiver.
+        return this.approvalGate.maybeGate(trx, {
+          patientId: link.patient_id,
+          actionType: ApprovalActionType.CAREGIVER_LINK_CHANGE,
+          actionPayload: { link_id: linkId, requester_caregiver_id: actingUserId },
+          requesterId: actingUserId,
+          requesterRole: RequestedByRole.CAREGIVER,
+          executeAction: runUnlink,
+        });
+      }
+
+      // Patient-initiated → immediate, never gated.
+      await runUnlink();
+      return { executed: true, status: ApprovalStatus.APPROVED, approval_id: null };
     });
   }
 

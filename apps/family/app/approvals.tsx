@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -10,26 +11,34 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { api } from '@/lib/api';
+import { coreApi, ApiError } from '@/lib/api';
 import { usePatientsStore } from '@/store/patients';
 
 const BRAND = '#6366F1';
 
+type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'auto_approved_no_approver';
+
 interface ApprovalRequest {
   approval_id: string;
-  type: 'permission_upgrade' | 'task_edit' | 'medication_view' | 'report_access';
+  action_type: 'caregiver_link_change' | 'family_link_permission_change';
   requested_by_name: string;
   requested_by_role: 'caregiver' | 'family' | 'patient';
   description: string;
   created_at: string;
-  status: 'pending' | 'approved' | 'rejected';
+  expires_at: string;
+  status: ApprovalStatus;
 }
 
 const TYPE_LABELS: Record<string, { label: string; icon: string }> = {
-  permission_upgrade: { label: 'Yetki Yükseltme', icon: '🔐' },
-  task_edit: { label: 'Görev Düzenleme', icon: '✏️' },
-  medication_view: { label: 'İlaç Görüntüleme', icon: '💊' },
-  report_access: { label: 'Rapor Erişimi', icon: '📋' },
+  caregiver_link_change: { label: 'Bakıcı Bağlantısı', icon: '🤝' },
+  family_link_permission_change: { label: 'Erişim Düzeyi', icon: '🔐' },
+};
+
+const STATUS_META: Record<string, { label: string; bg: string; fg: string }> = {
+  approved: { label: 'Onaylandı', bg: '#DCFCE7', fg: '#16A34A' },
+  rejected: { label: 'Reddedildi', bg: '#FEE2E2', fg: '#DC2626' },
+  expired: { label: 'Süresi Doldu', bg: '#F3F4F6', fg: '#6B7280' },
+  auto_approved_no_approver: { label: 'Otomatik Onaylandı', bg: '#FEF3C7', fg: '#92400E' },
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -50,10 +59,10 @@ export default function ApprovalsScreen() {
     if (!selectedPatientId) return;
     setIsLoading(true);
     try {
-      const data = await api.get<ApprovalRequest[]>(`/family/patients/${selectedPatientId}/approvals`);
+      const data = await coreApi.get<ApprovalRequest[]>(`/patients/${selectedPatientId}/approvals`);
       setRequests(data ?? []);
     } catch {
-      // ignore
+      // offline / not-yet-linked — leave the list as-is
     } finally {
       setIsLoading(false);
     }
@@ -68,13 +77,23 @@ export default function ApprovalsScreen() {
   };
 
   const handleDecide = async (approvalId: string, decision: 'approved' | 'rejected') => {
-    if (!selectedPatientId || processingId) return;
+    if (processingId) return;
     setProcessingId(approvalId);
     try {
-      await api.patch(`/family/patients/${selectedPatientId}/approvals/${approvalId}`, { status: decision });
-      setRequests((prev) => prev.map((r) => r.approval_id === approvalId ? { ...r, status: decision } : r));
-    } catch {
-      // ignore
+      await coreApi.post(`/approvals/${approvalId}/${decision === 'approved' ? 'approve' : 'reject'}`, {});
+      // Re-fetch: approving carries out the underlying action server-side, so
+      // the authoritative state (and any newly-resolved siblings) comes from
+      // the server, not an optimistic local flip.
+      await load();
+    } catch (e) {
+      const msg =
+        e instanceof ApiError && e.status === 403
+          ? 'Bu talebi karara bağlama yetkiniz yok.'
+          : e instanceof ApiError && e.status === 409
+            ? 'Bu talep zaten karara bağlanmış veya süresi dolmuş.'
+            : 'İşlem tamamlanamadı. Lütfen tekrar deneyin.';
+      Alert.alert('Hata', msg);
+      await load();
     } finally {
       setProcessingId(null);
     }
@@ -150,7 +169,7 @@ function ApprovalCard({
   onApprove?: () => void;
   onReject?: () => void;
 }) {
-  const meta = TYPE_LABELS[request.type] ?? { label: request.type, icon: '🔔' };
+  const meta = TYPE_LABELS[request.action_type] ?? { label: request.action_type, icon: '🔔' };
   const time = new Date(request.created_at).toLocaleString('tr-TR', {
     day: 'numeric',
     month: 'short',
@@ -159,6 +178,7 @@ function ApprovalCard({
   });
 
   const isPending = request.status === 'pending';
+  const statusMeta = STATUS_META[request.status];
 
   return (
     <View style={[styles.card, !isPending && styles.cardResolved]}>
@@ -170,11 +190,9 @@ function ApprovalCard({
             {ROLE_LABELS[request.requested_by_role]} · {request.requested_by_name} · {time}
           </Text>
         </View>
-        {!isPending && (
-          <View style={[styles.statusBadge, request.status === 'approved' ? styles.statusApproved : styles.statusRejected]}>
-            <Text style={[styles.statusText, request.status === 'approved' ? styles.statusApprovedText : styles.statusRejectedText]}>
-              {request.status === 'approved' ? 'Onaylandı' : 'Reddedildi'}
-            </Text>
+        {!isPending && statusMeta && (
+          <View style={[styles.statusBadge, { backgroundColor: statusMeta.bg }]}>
+            <Text style={[styles.statusText, { color: statusMeta.fg }]}>{statusMeta.label}</Text>
           </View>
         )}
       </View>
