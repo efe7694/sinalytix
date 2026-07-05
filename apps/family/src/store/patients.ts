@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/lib/api';
+import { api, coreApi } from '@/lib/api';
 
 export interface LinkedPatient {
   patient_id: string;
@@ -7,7 +7,7 @@ export interface LinkedPatient {
   last_name: string;
   relationship: string;
   permission_level: 'view' | 'edit' | 'full';
-  linked_at: string;
+  linked_at: string | null;
 }
 
 export interface SOSEvent {
@@ -35,23 +35,22 @@ export const usePatientsStore = create<PatientsState>((set, get) => ({
   activeSOS: null,
   isLoading: false,
 
-  // NOTE: /family/patients has no matching route in the old backend today —
-  // only /caregiver/patients exists, and that's CaregiverLink-backed, not
-  // PatientFamilyLink (wrong domain entirely, not swappable). This needs a
-  // real family-scoped "linked patients" endpoint, which naturally lands in
-  // the new backend's Faz 1 (PatientFamilyLink/FamilyLinkCode) rather than
-  // being retrofitted into a backend that's being retired. Known-broken
-  // until then, not an oversight.
+  // The caller-scoped "my linked patients" roster (Faz 1 Slice 3) — returns
+  // only active links for the authenticated family member, each joined with
+  // the patient's display name (via core-api's cross-actor patient_profiles
+  // read policy). Pending (unconfirmed) links are deliberately excluded until
+  // the patient confirms.
   fetchPatients: async () => {
     set({ isLoading: true });
     try {
-      const patients = await api.get<LinkedPatient[]>('/family/patients');
+      const rows = await coreApi.get<LinkedPatient[]>('/family/my-links');
+      const patients = rows.map((r) => ({ ...r, first_name: r.first_name ?? '', last_name: r.last_name ?? '' }));
       set({ patients });
       if (!get().selectedPatientId && patients.length > 0) {
         set({ selectedPatientId: patients[0].patient_id });
       }
     } catch {
-      // offline — keep cached
+      // offline or not-yet-linked — keep cached
     } finally {
       set({ isLoading: false });
     }

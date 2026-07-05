@@ -186,6 +186,27 @@ export class ConsentGrantsService {
     return { grant_id: row.grant_id };
   }
 
+  /**
+   * Faz 1 Slice 3's family-link unlink/revoke composes this into its own
+   * transaction (`trx` — not opened here), for the same reason
+   * `createBaseline` above does: cascading a baseline grant's revoke must be
+   * atomic with the `patient_family_links` status update, and calling the
+   * public `revoke()` method here would open a second, unrelated
+   * transaction blind to this one's still-uncommitted writes (the exact
+   * nested-`withRlsContext` bug found and fixed in Faz 1 Slice 2 — see
+   * DEVIATIONS.md D11). No-ops if the grant is already revoked or doesn't
+   * exist — the caller (an unlink flow) doesn't need this to be an error
+   * case, unlike the public endpoint's `revoke()`.
+   */
+  async revokeWithTrx(trx: Kysely<Database>, grantId: string, revokedBy: string): Promise<void> {
+    await trx
+      .updateTable('consent_grants')
+      .set({ revoked_at: new Date(), revoked_by: revokedBy })
+      .where('grant_id', '=', grantId)
+      .where('revoked_at', 'is', null)
+      .execute();
+  }
+
   async createSdmDeclaration(
     patientId: string,
     actingUserId: string,

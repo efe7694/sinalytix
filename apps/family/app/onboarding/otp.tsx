@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
-import { api } from '@/lib/api';
+import { coreApi } from '@/lib/api';
 
 const BRAND = '#6366F1';
 const OTP_TIMEOUT = 300; // 5 minutes
@@ -47,9 +47,10 @@ export default function OtpScreen() {
     setIsLoading(true);
     setError('');
     try {
-      const res = await api.post<{ access_token: string }>('/api/v1/auth/otp/verify', {
-        phone,
+      const res = await coreApi.post<{ access_token: string }>('/auth/otp/verify', {
+        phone_e164: phone,
         code: otp,
+        app_context: 'family',
       });
       await setTokens(res.access_token);
       router.replace('/onboarding/connect');
@@ -70,7 +71,7 @@ export default function OtpScreen() {
   const handleResend = async () => {
     if (resendCount >= 3 || timeLeft > 240) return;
     try {
-      await api.post('/api/v1/auth/otp/send', { phone });
+      await coreApi.post('/auth/otp/request', { phone_e164: phone });
       setResendCount((c) => c + 1);
       setTimeLeft(OTP_TIMEOUT);
       setAttempts(0);

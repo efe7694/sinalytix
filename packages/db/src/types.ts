@@ -282,6 +282,36 @@ export interface EmergencyContactsTable {
   deleted_at: Timestamp | null;
 }
 
+export interface FamilyLinkCodesTable {
+  link_code_id: Generated<string>;
+  patient_id: string;
+  code: string;
+  qr_payload: string;
+  source: string;
+  emergency_contact_id: string | null;
+  status: ColumnType<string, string | undefined, string>;
+  expires_at: Timestamp;
+  redeemed_at: Timestamp | null;
+  redeemed_by: string | null;
+  created_at: GeneratedTimestamp;
+}
+
+export interface PatientFamilyLinksTable {
+  link_id: Generated<string>;
+  patient_id: string;
+  family_user_id: string;
+  relationship: string;
+  status: string;
+  permission_level: ColumnType<string, string | undefined, string>;
+  source: string;
+  emergency_contact_id: string | null;
+  baseline_grant_id: string | null;
+  linked_at: Timestamp | null;
+  revoked_at: Timestamp | null;
+  revoked_by: string | null;
+  created_at: GeneratedTimestamp;
+}
+
 export interface Database {
   users: UsersTable;
   oauth_identities: OauthIdentitiesTable;
@@ -305,4 +335,6 @@ export interface Database {
   sdm_declarations: SdmDeclarationsTable;
   consent_grants: ConsentGrantsTable;
   emergency_contacts: EmergencyContactsTable;
+  family_link_codes: FamilyLinkCodesTable;
+  patient_family_links: PatientFamilyLinksTable;
 }

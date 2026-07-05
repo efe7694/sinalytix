@@ -79,6 +79,8 @@ export async function setupTestDatabase(): Promise<TestDbHandles> {
 }
 
 const DOMAIN_TABLES = [
+  'patient_family_links',
+  'family_link_codes',
   'emergency_contacts',
   'consent_grants',
   'sdm_declarations',

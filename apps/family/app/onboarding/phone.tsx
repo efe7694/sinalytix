@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { api } from '@/lib/api';
+import { coreApi, ApiError } from '@/lib/api';
 
 const BRAND = '#6366F1';
 
@@ -20,10 +20,14 @@ export default function PhoneScreen() {
     setError('');
     try {
       const normalized = '+1' + phone.replace(/\D/g, '');
-      await api.post('/family/auth/otp/send', { phone: normalized });
+      await coreApi.post('/auth/otp/request', { phone_e164: normalized });
       router.push({ pathname: '/onboarding/otp', params: { phone: normalized } });
-    } catch {
-      setError('Kod gönderilemedi. Lütfen tekrar deneyin.');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        setError('Çok fazla kod isteği. Lütfen biraz bekleyin.');
+      } else {
+        setError('Kod gönderilemedi. Lütfen tekrar deneyin.');
+      }
     } finally {
       setIsLoading(false);
     }
