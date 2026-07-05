@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
-import { api } from '@/lib/api';
+import { coreApi } from '@/lib/api';
 
 const TOKEN_KEY = 'caregiver_access_token';
 const PROFILE_CACHE_KEY = 'caregiver_profile_cache';
@@ -61,7 +61,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   fetchProfile: async () => {
     try {
-      const profile = await api.get<CaregiverProfile>('/caregiver/profile');
+      // core-api /me returns { user, profile }; profile is the caregiver_profiles row.
+      const me = await coreApi.get<{
+        user: { user_id: string; phone_e164: string | null; email: string | null; status: string };
+        profile: { first_name?: string | null; last_name?: string | null; role?: string | null } | null;
+      }>('/me');
+      const profile: CaregiverProfile = {
+        user_id: me.user.user_id,
+        first_name: me.profile?.first_name ?? '',
+        last_name: me.profile?.last_name ?? '',
+        phone: me.user.phone_e164,
+        email: me.user.email,
+        role: me.profile?.role ?? null,
+        status: me.user.status,
+        onboarding_completed_at: me.user.status === 'active' ? new Date().toISOString() : null,
+      };
       await SecureStore.setItemAsync(PROFILE_CACHE_KEY, JSON.stringify(profile));
       set({ profile });
     } catch {

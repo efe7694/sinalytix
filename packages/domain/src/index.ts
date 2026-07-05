@@ -14,4 +14,5 @@ export * from './consent';
 export * from './consent-grant';
 export * from './emergency-contact';
 export * from './family-link';
+export * from './caregiver-link';
 export * from './pagination';

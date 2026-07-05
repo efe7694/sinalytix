@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { api } from '@/lib/api';
+import { coreApi, ApiError } from '@/lib/api';
 
 export default function PhoneScreen() {
   const router = useRouter();
@@ -24,10 +24,20 @@ export default function PhoneScreen() {
     setIsLoading(true);
     setError('');
     try {
-      await api.post('/auth/otp/send', { phone, user_type: 'caregiver' });
-      router.push({ pathname: '/onboarding/otp', params: { phone } });
-    } catch (e: any) {
-      setError(e.body?.detail ?? 'Kod gönderilemedi. Tekrar dene.');
+      // Robust to the user typing the country code or not: 11 digits starting
+      // with 1 → already includes +1; 10 digits → prepend +1. Avoids the
+      // double-prefix bug (+1 416... → +114165550123) that would send the OTP
+      // to a wrong number and silently break login.
+      const digits = phone.replace(/\D/g, '');
+      const normalized = digits.length === 11 && digits.startsWith('1') ? `+${digits}` : `+1${digits}`;
+      await coreApi.post('/auth/otp/request', { phone_e164: normalized });
+      router.push({ pathname: '/onboarding/otp', params: { phone: normalized } });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        setError('Çok fazla kod isteği. Lütfen biraz bekleyin.');
+      } else {
+        setError('Kod gönderilemedi. Tekrar dene.');
+      }
     } finally {
       setIsLoading(false);
     }

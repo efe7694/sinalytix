@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
 import { useOnboardingStore } from '@/store/onboarding';
-import { api } from '@/lib/api';
+import { coreApi } from '@/lib/api';
 
 const OTP_TIMEOUT = 300; // 5 minutes
 const MAX_ATTEMPTS = 3;
@@ -49,22 +49,25 @@ export default function OtpScreen() {
     setIsLoading(true);
     setError('');
     try {
-      const res = await api.post<{ access_token: string }>('/auth/otp/verify', {
-        phone,
+      const res = await coreApi.post<{ access_token: string }>('/auth/otp/verify', {
+        phone_e164: phone,
         code,
-        user_type: 'caregiver',
+        app_context: 'caregiver',
       });
       await setTokens(res.access_token);
-      // Transfer onboarding draft
-      await api.post('/caregiver/onboarding/complete', {
-        language: draft.language,
-        consent: draft.consent,
-        first_name: draft.profile.first_name,
-        last_name: draft.profile.last_name,
-        auth_method: 'phone_otp',
-        phone,
-        tos_version: '1.0.0',
-      });
+      // Set the caregiver's name on the new backend via PATCH /me (replaces
+      // the legacy /caregiver/onboarding/complete draft transfer for the name;
+      // consent/language transfer is a separate, not-yet-rewritten concern).
+      if (draft.profile.first_name || draft.profile.last_name) {
+        try {
+          await coreApi.patch('/me', {
+            ...(draft.profile.first_name ? { first_name: draft.profile.first_name } : {}),
+            ...(draft.profile.last_name ? { last_name: draft.profile.last_name } : {}),
+          });
+        } catch {
+          // non-fatal — name can be set later in profile settings
+        }
+      }
       router.replace('/onboarding/done');
     } catch (e: any) {
       const newAttempts = attempts + 1;
@@ -88,7 +91,7 @@ export default function OtpScreen() {
     setSecondsLeft(OTP_TIMEOUT);
     setResendCount((c) => c + 1);
     try {
-      await api.post('/auth/otp/send', { phone, user_type: 'caregiver' });
+      await coreApi.post('/auth/otp/request', { phone_e164: phone });
     } catch {
       setError('Kod gönderilemedi.');
     }

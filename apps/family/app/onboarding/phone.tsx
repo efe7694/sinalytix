@@ -19,7 +19,10 @@ export default function PhoneScreen() {
     setIsLoading(true);
     setError('');
     try {
-      const normalized = '+1' + phone.replace(/\D/g, '');
+      // Robust to the user including the country code or not — avoids the
+      // double-prefix bug (+1 416... → +114165550123) that would break login.
+      const digits = phone.replace(/\D/g, '');
+      const normalized = digits.length === 11 && digits.startsWith('1') ? `+${digits}` : `+1${digits}`;
       await coreApi.post('/auth/otp/request', { phone_e164: normalized });
       router.push({ pathname: '/onboarding/otp', params: { phone: normalized } });
     } catch (e) {
