@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards, UseInterceptors } from '@nestjs/common';
-import type { GenerateCaregiverLinkCodeResponse, LinkedPatientForCaregiver } from '@sinalytix/domain';
+import type { GatedActionResult, GenerateCaregiverLinkCodeResponse, LinkedPatientForCaregiver } from '@sinalytix/domain';
 import { AuthContextGuard } from '../common/auth-context.guard';
 import { CurrentAuth } from '../common/current-auth.decorator';
 import type { AuthContext } from '../common/auth-context.guard';
@@ -39,11 +39,13 @@ export class CaregiverLinksController {
     return this.caregiverLinksService.redeem(auth.userId, body);
   }
 
+  // Returns the gate result (200) rather than 204: a caregiver-initiated
+  // unlink may be `executed: false, status: 'pending'` (awaiting a family
+  // approval) instead of taking effect immediately.
   @Post('caregiver-links/:linkId/unlink')
   @UseInterceptors(IdempotencyInterceptor)
-  @HttpCode(204)
-  async unlink(@Param('linkId') linkId: string, @CurrentAuth() auth: AuthContext): Promise<void> {
-    await this.caregiverLinksService.unlink(linkId, auth.userId);
+  async unlink(@Param('linkId') linkId: string, @CurrentAuth() auth: AuthContext): Promise<GatedActionResult> {
+    return this.caregiverLinksService.unlink(linkId, auth.userId);
   }
 
   @Get('caregiver/my-patients')

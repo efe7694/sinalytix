@@ -187,6 +187,33 @@ export const CaregiverLinkStatus = {
 } as const;
 export type CaregiverLinkStatus = (typeof CaregiverLinkStatus)[keyof typeof CaregiverLinkStatus];
 
+// ── ApprovalRequest / PatientApprovalConfig (Faz 1 Slice 5, Module 3) ─────
+
+/** The sensitive actions a patient can require family approval for. Kept to
+ * exactly two in Faz 1 (a judgment call — see DEVIATIONS D14). */
+export const ApprovalActionType = {
+  CAREGIVER_LINK_CHANGE: 'caregiver_link_change',
+  FAMILY_LINK_PERMISSION_CHANGE: 'family_link_permission_change',
+} as const;
+export type ApprovalActionType = (typeof ApprovalActionType)[keyof typeof ApprovalActionType];
+
+export const ApprovalStatus = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+  EXPIRED: 'expired',
+  // No eligible approver existed at request time, so it executed immediately.
+  AUTO_APPROVED_NO_APPROVER: 'auto_approved_no_approver',
+} as const;
+export type ApprovalStatus = (typeof ApprovalStatus)[keyof typeof ApprovalStatus];
+
+export const RequestedByRole = {
+  PATIENT: 'patient',
+  FAMILY: 'family',
+  CAREGIVER: 'caregiver',
+} as const;
+export type RequestedByRole = (typeof RequestedByRole)[keyof typeof RequestedByRole];
+
 export const FamilyLinkSource = {
   EC_INVITE: 'ec_invite',
   CODE: 'code',

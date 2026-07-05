@@ -326,6 +326,29 @@ export interface CaregiverLinksTable {
   created_at: GeneratedTimestamp;
 }
 
+export interface PatientApprovalConfigsTable {
+  patient_id: string;
+  action_type: string;
+  requires_approval: ColumnType<boolean, boolean | undefined, boolean>;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
+export interface ApprovalRequestsTable {
+  approval_id: Generated<string>;
+  patient_id: string;
+  action_type: string;
+  action_payload: unknown;
+  requested_by: string;
+  requested_by_role: string;
+  requested_by_name: string;
+  status: ColumnType<string, string | undefined, string>;
+  decided_by: string | null;
+  decided_at: Timestamp | null;
+  expires_at: Timestamp;
+  created_at: GeneratedTimestamp;
+}
+
 export interface Database {
   users: UsersTable;
   oauth_identities: OauthIdentitiesTable;
@@ -352,4 +375,6 @@ export interface Database {
   family_link_codes: FamilyLinkCodesTable;
   patient_family_links: PatientFamilyLinksTable;
   caregiver_links: CaregiverLinksTable;
+  patient_approval_configs: PatientApprovalConfigsTable;
+  approval_requests: ApprovalRequestsTable;
 }

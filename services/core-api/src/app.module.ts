@@ -6,6 +6,7 @@ import { ConsentGrantsModule } from './consent-grants/consent-grants.module';
 import { EmergencyContactsModule } from './emergency-contacts/emergency-contacts.module';
 import { FamilyLinksModule } from './family-links/family-links.module';
 import { CaregiverLinksModule } from './caregiver-links/caregiver-links.module';
+import { ApprovalRequestsModule } from './approval-requests/approval-requests.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { CaregiverLinksModule } from './caregiver-links/caregiver-links.module';
     EmergencyContactsModule,
     FamilyLinksModule,
     CaregiverLinksModule,
+    ApprovalRequestsModule,
   ],
 })
 export class AppModule {}
