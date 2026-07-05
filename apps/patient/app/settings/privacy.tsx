@@ -119,6 +119,7 @@ function ECRow({
   onMoveDown,
   onRemove,
   onVerifyPhone,
+  onInvite,
 }: {
   ec: EmergencyContact;
   index: number;
@@ -127,6 +128,7 @@ function ECRow({
   onMoveDown: () => void;
   onRemove: () => void;
   onVerifyPhone: () => void;
+  onInvite: () => void;
 }) {
   const priority = index + 1;
   const isFirst = index === 0;
@@ -148,6 +150,11 @@ function ECRow({
           {!ec.phone_verified && (
             <TouchableOpacity onPress={onVerifyPhone} style={[styles.chip, styles.verifyChip]}>
               <Text style={[styles.chipText, { color: COLORS.error }]}>Telefonu Doğrula</Text>
+            </TouchableOpacity>
+          )}
+          {ec.invite_status === 'pending' && (
+            <TouchableOpacity onPress={onInvite} style={[styles.chip, styles.inviteChip]}>
+              <Text style={[styles.chipText, { color: COLORS.primary }]}>Aileye Davet Et</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -450,6 +457,7 @@ export default function PrivacyScreen() {
     requestPhoneVerification,
     confirmPhoneVerification,
     cancelPhoneVerification,
+    inviteEmergencyContact,
     generateCaregiverCode,
     unlinkCaregiver,
     disconnectFamily,
@@ -502,6 +510,18 @@ export default function PrivacyScreen() {
       await requestPhoneVerification(ec.ec_id);
     } catch {
       // requestPhoneVerification already stores verifyError for the modal to show.
+    }
+  }
+
+  async function handleInviteEC(ec: EmergencyContact) {
+    try {
+      const { code } = await inviteEmergencyContact(ec.ec_id);
+      Alert.alert(
+        'Aile Davet Kodu',
+        `${ec.first_name} ${ec.last_name} için davet kodu:\n\n${code}\n\nBu kodu paylaşın. Aile üyesi, Sinalytix Aile uygulamasında bu kodu girerek hesabınıza bağlanır. Kod 15 dakika geçerlidir.`,
+      );
+    } catch {
+      Alert.alert('Hata', 'Davet kodu oluşturulamadı. Lütfen tekrar deneyin.');
     }
   }
 
@@ -658,6 +678,7 @@ export default function PrivacyScreen() {
                     onMoveDown={() => handleReorder(index, 'down')}
                     onRemove={() => handleRemoveEC(ec)}
                     onVerifyPhone={() => handleVerifyPhone(ec)}
+                    onInvite={() => handleInviteEC(ec)}
                   />
                 </View>
               ))
@@ -934,6 +955,11 @@ const styles = StyleSheet.create({
   verifyChip: {
     borderWidth: 1,
     borderColor: COLORS.error,
+    backgroundColor: COLORS.background,
+  },
+  inviteChip: {
+    borderWidth: 1,
+    borderColor: COLORS.primary,
     backgroundColor: COLORS.background,
   },
   ecActions: {

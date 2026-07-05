@@ -65,6 +65,7 @@ interface PrivacyActions {
   requestPhoneVerification(ecId: string): Promise<void>;
   confirmPhoneVerification(ecId: string, code: string): Promise<void>;
   cancelPhoneVerification(): void;
+  inviteEmergencyContact(ecId: string): Promise<{ code: string; expires_at: string }>;
   generateCaregiverCode(): Promise<void>;
   unlinkCaregiver(): Promise<void>;
   disconnectFamily(connectionId: string): Promise<void>;
@@ -228,6 +229,18 @@ export const usePrivacyStore = create<PrivacyState & PrivacyActions>((set, get) 
 
   cancelPhoneVerification: () => {
     set({ verifyingEcId: null, verifyError: null, verifyRetryAfterSeconds: null });
+  },
+
+  // Generates a family-invite code for an existing emergency contact
+  // (Faz 1 Slice 3 ec_invite path). Returns the 6-digit code for the patient
+  // to hand to that contact, who redeems it in the Family app to link
+  // instantly (no separate patient-confirm step, unlike a generic code).
+  inviteEmergencyContact: async (ecId) => {
+    const invite = await coreApi.post<{ code: string; expires_at: string }>(
+      `/emergency-contacts/${ecId}/invite`,
+      {},
+    );
+    return { code: invite.code, expires_at: invite.expires_at };
   },
 
   generateCaregiverCode: async () => {

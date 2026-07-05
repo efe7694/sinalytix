@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
-import { api } from '@/lib/api';
+import { coreApi } from '@/lib/api';
 
 const TOKEN_KEY = 'family_access_token';
 const PROFILE_CACHE_KEY = 'family_profile_cache';
@@ -60,7 +60,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   fetchProfile: async () => {
     try {
-      const profile = await api.get<FamilyProfile>('/family/profile');
+      // core-api /me returns { user, profile } — profile is the family_profiles
+      // row. `relationship` is deliberately absent: it's now per-link (a family
+      // member can relate differently to each patient), so it lives on the
+      // patient roster (/family/my-links), not on a single profile.
+      const me = await coreApi.get<{
+        user: { user_id: string; phone_e164: string | null; email: string | null; locale: string; status: string };
+        profile: { first_name?: string | null; last_name?: string | null } | null;
+      }>('/me');
+      const profile: FamilyProfile = {
+        user_id: me.user.user_id,
+        first_name: me.profile?.first_name ?? '',
+        last_name: me.profile?.last_name ?? '',
+        phone: me.user.phone_e164,
+        email: me.user.email,
+        relationship: 'other',
+        locale: me.user.locale,
+        status: me.user.status,
+        onboarding_completed_at: me.user.status === 'active' ? new Date().toISOString() : null,
+      };
       await SecureStore.setItemAsync(PROFILE_CACHE_KEY, JSON.stringify(profile));
       set({ profile });
     } catch {
