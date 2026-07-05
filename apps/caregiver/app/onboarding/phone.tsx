@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { api } from '@/lib/api';
+import { coreApi, ApiError } from '@/lib/api';
 
 export default function PhoneScreen() {
   const router = useRouter();
@@ -24,10 +24,15 @@ export default function PhoneScreen() {
     setIsLoading(true);
     setError('');
     try {
-      await api.post('/auth/otp/send', { phone, user_type: 'caregiver' });
-      router.push({ pathname: '/onboarding/otp', params: { phone } });
-    } catch (e: any) {
-      setError(e.body?.detail ?? 'Kod gönderilemedi. Tekrar dene.');
+      const normalized = '+1' + phone.replace(/\D/g, '');
+      await coreApi.post('/auth/otp/request', { phone_e164: normalized });
+      router.push({ pathname: '/onboarding/otp', params: { phone: normalized } });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        setError('Çok fazla kod isteği. Lütfen biraz bekleyin.');
+      } else {
+        setError('Kod gönderilemedi. Tekrar dene.');
+      }
     } finally {
       setIsLoading(false);
     }

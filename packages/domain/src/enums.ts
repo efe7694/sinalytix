@@ -165,14 +165,27 @@ export const LinkPermissionLevel = {
 } as const;
 export type LinkPermissionLevel = (typeof LinkPermissionLevel)[keyof typeof LinkPermissionLevel];
 
-/** `PatientFamilyLink.status` — `CaregiverLink` has its own distinct status
- * set (pending/linked/expired/unlinked), defined where that table lands. */
+/** `PatientFamilyLink.status`. `CaregiverLink` has its own distinct status
+ * set (`CaregiverLinkStatus` below) — a caregiver link has no
+ * patient-confirm step, so its lifecycle is pending→linked, not
+ * pending_patient_confirm→active. */
 export const FamilyLinkStatus = {
   PENDING_PATIENT_CONFIRM: 'pending_patient_confirm',
   ACTIVE: 'active',
   REVOKED: 'revoked',
 } as const;
 export type FamilyLinkStatus = (typeof FamilyLinkStatus)[keyof typeof FamilyLinkStatus];
+
+/** `CaregiverLink.status` (Faz 1 Slice 4, Dictionary §4/C22) — the code and
+ * the link are the same row: a `pending` code becomes `linked` on redeem;
+ * `unlinked` when either party ends it; `expired` once its 15-min TTL lapses. */
+export const CaregiverLinkStatus = {
+  PENDING: 'pending',
+  LINKED: 'linked',
+  EXPIRED: 'expired',
+  UNLINKED: 'unlinked',
+} as const;
+export type CaregiverLinkStatus = (typeof CaregiverLinkStatus)[keyof typeof CaregiverLinkStatus];
 
 export const FamilyLinkSource = {
   EC_INVITE: 'ec_invite',

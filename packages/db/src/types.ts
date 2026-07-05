@@ -312,6 +312,20 @@ export interface PatientFamilyLinksTable {
   created_at: GeneratedTimestamp;
 }
 
+export interface CaregiverLinksTable {
+  link_id: Generated<string>;
+  patient_id: string;
+  caregiver_id: string | null;
+  code: string;
+  qr_payload: string;
+  status: ColumnType<string, string | undefined, string>;
+  expires_at: Timestamp;
+  linked_at: Timestamp | null;
+  unlinked_at: Timestamp | null;
+  unlinked_by: string | null;
+  created_at: GeneratedTimestamp;
+}
+
 export interface Database {
   users: UsersTable;
   oauth_identities: OauthIdentitiesTable;
@@ -337,4 +351,5 @@ export interface Database {
   emergency_contacts: EmergencyContactsTable;
   family_link_codes: FamilyLinkCodesTable;
   patient_family_links: PatientFamilyLinksTable;
+  caregiver_links: CaregiverLinksTable;
 }

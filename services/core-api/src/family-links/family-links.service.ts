@@ -12,16 +12,14 @@ import {
   type PatientFamilyLinkPublic,
   type RedeemFamilyLinkRequest,
 } from '@sinalytix/domain';
-import type Redis from 'ioredis';
-import { REDIS } from '../common/redis.module';
 import { KYSELY } from '../common/db.module';
 import { ProblemException } from '../common/problem.exception';
 import { randomOtpCode, randomToken } from '../common/hash.util';
+import { RedeemRateLimiter } from '../common/redeem-rate-limiter.service';
 import { ConsentGrantsService } from '../consent-grants/consent-grants.service';
 
 const CODE_TTL_SECONDS = 15 * 60; // matches the caregiver-link UI's existing "code valid for 15 minutes" copy
-const REDEEM_FAIL_LIMIT = 5;
-const REDEEM_LOCKOUT_SECONDS = 15 * 60;
+const REDEEM_NAMESPACE = 'family-link';
 
 // A family member's default access on link activation — deliberately
 // minimal (Module 3 §2.2 default-deny philosophy: never lockbox, and here
@@ -29,13 +27,6 @@ const REDEEM_LOCKOUT_SECONDS = 15 * 60;
 // approvals screen already has a "permission_upgrade" request type built
 // for widening this later; this is the floor, not the intended steady state.
 const FAMILY_BASELINE_SCOPE: string[] = [ConsentCategory.DEMOGRAPHIC];
-
-function redeemFailCountKey(familyUserId: string): string {
-  return `family-link-redeem:failcount:${familyUserId}`;
-}
-function redeemLockoutKey(familyUserId: string): string {
-  return `family-link-redeem:lockout:${familyUserId}`;
-}
 
 function toLinkPublic(row: {
   link_id: string;
@@ -69,8 +60,8 @@ function toLinkPublic(row: {
 export class FamilyLinksService {
   constructor(
     @Inject(KYSELY) private readonly db: Kysely<Database>,
-    @Inject(REDIS) private readonly redis: Redis,
     private readonly consentGrantsService: ConsentGrantsService,
+    private readonly redeemRateLimiter: RedeemRateLimiter,
   ) {}
 
   // ── Patient side: generate / revoke a connect code ──────────────────────
@@ -212,10 +203,7 @@ export class FamilyLinksService {
    * comment, which anticipated this exact design in Slice 1).
    */
   async redeem(actingUserId: string, body: RedeemFamilyLinkRequest): Promise<PatientFamilyLinkPublic> {
-    const locked = await this.redis.get(redeemLockoutKey(actingUserId));
-    if (locked) {
-      throw ProblemException.tooManyRequests('Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.', REDEEM_LOCKOUT_SECONDS);
-    }
+    await this.redeemRateLimiter.assertNotLockedOut(REDEEM_NAMESPACE, actingUserId);
 
     return withRlsContext(this.db, { actingUserId }, async (trx) => {
       const matchedSource = body.code ? FamilyLinkSource.CODE : FamilyLinkSource.QR;
@@ -224,7 +212,7 @@ export class FamilyLinksService {
         : await findFamilyLinkCodeByQrPayload(trx, body.qr_payload as string);
 
       if (!codeRow) {
-        return this.recordRedeemFailureAndThrow(actingUserId);
+        return this.redeemRateLimiter.recordFailureAndThrow(REDEEM_NAMESPACE, actingUserId);
       }
 
       const source = codeRow.source === FamilyLinkSource.EC_INVITE ? FamilyLinkSource.EC_INVITE : matchedSource;
@@ -247,7 +235,7 @@ export class FamilyLinksService {
       if (!redeemedCode) {
         // Someone else redeemed/revoked it in the gap between lookup and
         // this UPDATE — same generic anti-enumeration response.
-        return this.recordRedeemFailureAndThrow(actingUserId);
+        return this.redeemRateLimiter.recordFailureAndThrow(REDEEM_NAMESPACE, actingUserId);
       }
 
       const isEcInvite = source === FamilyLinkSource.EC_INVITE;
@@ -400,22 +388,5 @@ export class FamilyLinksService {
         linked_at: row.linked_at?.toISOString() ?? null,
       }));
     });
-  }
-
-  /** Records a failed attempt and throws — 429 the moment this call crosses
-   * the threshold (matching EmergencyContactsService's confirmPhoneVerification
-   * pattern), not just on a later call once already locked out. */
-  private async recordRedeemFailureAndThrow(actingUserId: string): Promise<never> {
-    const fails = await this.redis.incr(redeemFailCountKey(actingUserId));
-    if (fails === 1) {
-      await this.redis.expire(redeemFailCountKey(actingUserId), REDEEM_LOCKOUT_SECONDS);
-    }
-    if (fails >= REDEEM_FAIL_LIMIT) {
-      await this.redis.set(redeemLockoutKey(actingUserId), '1', 'EX', REDEEM_LOCKOUT_SECONDS);
-      throw ProblemException.tooManyRequests('Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.', REDEEM_LOCKOUT_SECONDS);
-    }
-    // Anti-enumeration: identical response whether the code doesn't exist,
-    // expired, or was already redeemed.
-    throw ProblemException.notFound('Kod geçersiz veya süresi dolmuş.');
   }
 }

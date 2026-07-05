@@ -246,8 +246,24 @@ export const usePrivacyStore = create<PrivacyState & PrivacyActions>((set, get) 
   generateCaregiverCode: async () => {
     set({ saving: true, error: null });
     try {
-      const link = await api.post<CaregiverLink>('/api/v1/caregiver/link', {});
-      set({ caregiverLink: link, saving: false });
+      // Faz 1 Slice 4 → core-api. Response is {link_id, code, qr_payload,
+      // expires_at}; map to the screen's CaregiverLink shape (a freshly
+      // generated code is always 'pending' with no caregiver attached yet).
+      const res = await coreApi.post<{ link_id: string; code: string; qr_payload: string; expires_at: string }>(
+        `/patients/${patientId()}/caregiver-links`,
+        {},
+      );
+      set({
+        caregiverLink: {
+          link_id: res.link_id,
+          link_code: res.code,
+          qr_payload: res.qr_payload,
+          expires_at: res.expires_at,
+          status: 'pending',
+          caregiver_name: null,
+        },
+        saving: false,
+      });
     } catch (err) {
       set({
         saving: false,
