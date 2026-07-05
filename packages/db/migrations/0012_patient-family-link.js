@@ -104,26 +104,31 @@ exports.up = (pgm) => {
     );
 
     -- The redeem() transaction for an ec_invite-sourced code runs entirely
-    -- as the family member (app_acting_user_id() never switches to the
-    -- patient mid-transaction — see 0009's own header comment, which
-    -- anticipated exactly this policy) — so accepting the invite (stamping
-    -- linked_family_user_id/invite_status back onto the ONE EC row that
-    -- generated this exact invite) needs its own cross-actor UPDATE
-    -- policy, scoped tightly to that single row via the link's own
-    -- emergency_contact_id FK, not "any EC row for this patient".
-    CREATE POLICY emergency_contacts_family_invite_accept ON emergency_contacts FOR UPDATE USING (
-      EXISTS (
-        SELECT 1 FROM patient_family_links pfl
-        WHERE pfl.emergency_contact_id = emergency_contacts.ec_id
-          AND pfl.family_user_id = app_acting_user_id()
-      )
-    ) WITH CHECK (
-      EXISTS (
-        SELECT 1 FROM patient_family_links pfl
-        WHERE pfl.emergency_contact_id = emergency_contacts.ec_id
-          AND pfl.family_user_id = app_acting_user_id()
-      )
-    );
+    -- as the family member and must stamp linked_family_user_id/invite_status
+    -- back onto the ONE EC row that generated this invite. An earlier design
+    -- did this with a cross-actor UPDATE *policy* on emergency_contacts —
+    -- but Postgres RLS has no column-level WITH CHECK, so a policy wide
+    -- enough to allow that 3-column write also unlocked the table's
+    -- general-purpose PATCH /emergency-contacts/:ecId edit path (and
+    -- soft-delete) for the family member, letting them rewrite the patient's
+    -- EC phone/name — a cross-tenant write to safety-critical data (that
+    -- phone is who SOS dials). Found by this slice's adversarial review.
+    -- Resolution: no family UPDATE policy on emergency_contacts at all; the
+    -- narrow accept-write goes through this SECURITY DEFINER function
+    -- instead (same tool/reasoning as the code-redeem functions in 0011).
+    -- Callers only ever pass server-derived args (ec_id from the redeemed
+    -- code row, family_user_id from the JWT), never client input, and it's
+    -- only invoked inside a redeem transaction that already succeeded — so
+    -- the family member gains zero direct write access to the table.
+    CREATE OR REPLACE FUNCTION family_link_accept_ec(p_ec_id uuid, p_family_user_id uuid)
+    RETURNS void
+    LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+      UPDATE emergency_contacts
+      SET linked_family_user_id = p_family_user_id,
+          invite_status = 'accepted_app_user',
+          invite_accepted_at = now()
+      WHERE ec_id = p_ec_id AND deleted_at IS NULL;
+    $$;
 
     -- Third INSERT branch anticipated by 0009's own header comment and by
     -- ConsentGrantsService.createBaseline()'s doc comment: the ec_invite
@@ -183,10 +188,10 @@ exports.down = (pgm) => {
     -- formal dependencies by Postgres (unlike a FK) — dropping the table
     -- first would leave these dangling, not auto-removed, so they must go
     -- explicitly before the table does.
+    DROP FUNCTION IF EXISTS family_link_accept_ec(uuid, uuid);
     DROP POLICY IF EXISTS consent_grants_family_grantee_revoke ON consent_grants;
     DROP POLICY IF EXISTS consent_grants_family_link_insert ON consent_grants;
     DROP POLICY IF EXISTS patient_profiles_family_select ON patient_profiles;
-    DROP POLICY IF EXISTS emergency_contacts_family_invite_accept ON emergency_contacts;
     DROP POLICY IF EXISTS emergency_contacts_family_select ON emergency_contacts;
     DROP TABLE IF EXISTS patient_family_links;
   `);

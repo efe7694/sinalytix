@@ -56,3 +56,13 @@ export async function redeemFamilyLinkCode(
   );
   return result.rows[0];
 }
+
+/** Stamps a family member as the accepted owner of an ec_invite emergency
+ * contact — the narrow 3-column write the redeem transaction performs. Goes
+ * through the SECURITY DEFINER function (migration 0012) so the family member
+ * needs no direct UPDATE policy on emergency_contacts (which would over-grant
+ * the general-purpose EC edit path; see that migration's comment). Args are
+ * always server-derived, never client input. */
+export async function acceptEcInvite(db: Kysely<Database>, ecId: string, familyUserId: string): Promise<void> {
+  await sql`select family_link_accept_ec(${ecId}, ${familyUserId})`.execute(db);
+}

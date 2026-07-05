@@ -194,6 +194,33 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
       expect(updatedEc?.invite_status).toBe('accepted_app_user');
     });
 
+    it('an active ec_invite family member CANNOT tamper with or delete the patient\'s emergency contact (Slice 3 review C1)', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      const ec = await ecService.create(patient.user_id, patient.user_id, {
+        relationship: 'spouse',
+        first_name: 'Ayşe',
+        last_name: 'Yılmaz',
+        phone: '+14165550001',
+      });
+      const invite = await service.inviteEmergencyContact(ec.ec_id, patient.user_id);
+      await service.redeem(family.user_id, { code: invite.code }); // link now active; family can READ the EC
+
+      // The family member can see the contact (care-circle read is intended)...
+      // ...but must NOT be able to rewrite its phone/name or soft-delete it:
+      // that phone is who the SOS chain dials.
+      await expect(
+        ecService.update(ec.ec_id, family.user_id, { phone: '+19998887777', first_name: 'H' }),
+      ).rejects.toMatchObject({ status: 404 });
+      await expect(ecService.remove(ec.ec_id, family.user_id)).rejects.toMatchObject({ status: 404 });
+
+      // The patient's contact is untouched.
+      const contacts = await ecService.list(patient.user_id, patient.user_id);
+      const stillThere = contacts.find((c) => c.ec_id === ec.ec_id);
+      expect(stillThere?.phone).toBe('+14165550001');
+      expect(stillThere?.first_name).toBe('Ayşe');
+    });
+
     it('ec_invite redeem does not require a relationship field', async () => {
       const patient = await makePatient();
       const family = await makeFamily();

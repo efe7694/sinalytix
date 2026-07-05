@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Kysely } from 'kysely';
 import type { Database } from '@sinalytix/db';
-import { findFamilyLinkCodeByCode, findFamilyLinkCodeByQrPayload, redeemFamilyLinkCode, withRlsContext } from '@sinalytix/db';
+import { acceptEcInvite, findFamilyLinkCodeByCode, findFamilyLinkCodeByQrPayload, redeemFamilyLinkCode, withRlsContext } from '@sinalytix/db';
 import {
   ConsentCategory,
   FamilyLinkSource,
@@ -292,11 +292,10 @@ export class FamilyLinksService {
           scope: FAMILY_BASELINE_SCOPE,
         });
         await trx.updateTable('patient_family_links').set({ baseline_grant_id: grant.grant_id }).where('link_id', '=', link.link_id).execute();
-        await trx
-          .updateTable('emergency_contacts')
-          .set({ linked_family_user_id: actingUserId, invite_status: 'accepted_app_user', invite_accepted_at: new Date() })
-          .where('ec_id', '=', codeRow.emergency_contact_id as string)
-          .execute();
+        // Narrow accept-write via SECURITY DEFINER (no family UPDATE policy on
+        // emergency_contacts exists — that would over-grant the general edit
+        // path; see migration 0012). Args are server-derived, not client input.
+        await acceptEcInvite(trx, codeRow.emergency_contact_id as string, actingUserId);
         return toLinkPublic({ ...link, baseline_grant_id: grant.grant_id });
       }
 

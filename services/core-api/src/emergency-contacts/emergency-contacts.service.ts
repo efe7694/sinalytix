@@ -149,7 +149,14 @@ export class EmergencyContactsService {
         .where('ec_id', '=', ecId)
         .where('deleted_at', 'is', null)
         .executeTakeFirst();
-      if (!existing) {
+      // Owner-only, independent of RLS: an emergency contact is patient-owned
+      // data, and editing it is never a family/caregiver action. A linked
+      // family member CAN read this row (emergency_contacts_family_select),
+      // so relying on RLS visibility alone here would let them reach this
+      // general-purpose edit path — the defense-in-depth backstop for the
+      // over-broad-policy class of bug (Slice 3 review; the policy itself is
+      // now gone, this makes the endpoint correct regardless).
+      if (!existing || existing.patient_id !== actingUserId) {
         throw ProblemException.notFound();
       }
 
@@ -193,7 +200,19 @@ export class EmergencyContactsService {
 
   async remove(ecId: string, actingUserId: string): Promise<void> {
     await withRlsContext(this.db, { actingUserId }, async (trx) => {
-      const result = await trx
+      // Owner-only, independent of RLS (same reasoning as update() — a linked
+      // family member can read this row, so RLS visibility alone must not
+      // gate a soft-delete of the patient's safety-critical contact).
+      const existing = await trx
+        .selectFrom('emergency_contacts')
+        .select(['ec_id', 'patient_id'])
+        .where('ec_id', '=', ecId)
+        .where('deleted_at', 'is', null)
+        .executeTakeFirst();
+      if (!existing || existing.patient_id !== actingUserId) {
+        throw ProblemException.notFound();
+      }
+      await trx
         .updateTable('emergency_contacts')
         // sort_order: null frees the slot for the DEFERRABLE unique
         // constraint (migration 0010) — NULLs never collide with each
@@ -201,10 +220,7 @@ export class EmergencyContactsService {
         .set({ deleted_at: new Date(), sort_order: null })
         .where('ec_id', '=', ecId)
         .where('deleted_at', 'is', null)
-        .executeTakeFirst();
-      if (Number(result.numUpdatedRows) === 0) {
-        throw ProblemException.notFound();
-      }
+        .execute();
     });
   }
 
