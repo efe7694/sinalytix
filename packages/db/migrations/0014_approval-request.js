@@ -80,12 +80,15 @@ exports.up = (pgm) => {
     );
     ALTER TABLE approval_requests ENABLE ROW LEVEL SECURITY;
 
-    -- At most one pending request per (patient, action_type, target) — a
-    -- resubmit while one is pending is a conflict, not a duplicate. The target
-    -- is inside action_payload, so we scope the partial index by the whole
-    -- (patient, action_type) here and let the service reject an exact-duplicate
-    -- pending target; good enough for the two gated actions (each has one
-    -- natural target at a time in practice).
+    -- Non-unique lookup index over pending requests. It is deliberately NOT a
+    -- UNIQUE index on (patient_id, action_type): a patient can legitimately
+    -- have several pending requests of the same action_type at once (e.g. two
+    -- different caregivers each with a pending unlink). The real dedup key is
+    -- the per-target id inside action_payload (link_id), which a partial
+    -- constraint can't index, so exact-duplicate rejection (same target, same
+    -- requester, still pending) is enforced in the service before the gate
+    -- runs — see CaregiverLinksService.unlink(). This index just keeps the
+    -- gate's approver-count / pending-lookup queries cheap.
     CREATE INDEX approval_requests_patient_pending
       ON approval_requests (patient_id, action_type) WHERE status = 'pending';
 

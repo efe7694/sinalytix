@@ -139,6 +139,21 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
       expect(await linkStatus(linkId)).toBe('linked');
     });
 
+    it('a second unlink attempt while one is already pending is rejected (409, no duplicate request)', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      const caregiver = await makeCaregiver();
+      await seedActiveFamilyLink(patient.user_id, family.user_id);
+      await requireApproval(patient.user_id);
+      const linkId = await seedLinkedCaregiver(patient.user_id, caregiver.user_id);
+
+      await caregiverLinks.unlink(linkId, caregiver.user_id); // first → pending
+      await expect(caregiverLinks.unlink(linkId, caregiver.user_id)).rejects.toMatchObject({ status: 409 });
+
+      const reqs = await approvals.listForPatient(patient.user_id, patient.user_id);
+      expect(reqs.filter((r) => r.status === 'pending')).toHaveLength(1); // exactly one, not two
+    });
+
     it('GATED but ZERO eligible approvers → auto_approved_no_approver, executes immediately', async () => {
       const patient = await makePatient();
       const caregiver = await makeCaregiver();

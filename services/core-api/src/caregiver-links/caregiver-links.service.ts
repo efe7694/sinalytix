@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import type { Database } from '@sinalytix/db';
 import {
   findCaregiverLinkByCode,
@@ -174,6 +174,23 @@ export class CaregiverLinksService {
       };
 
       if (link.caregiver_id === actingUserId) {
+        // Reject a duplicate: if this caregiver already has a pending unlink
+        // request for THIS link, don't create a second one (the partial index
+        // is a non-unique lookup index; the target link_id lives in the jsonb
+        // payload, so dedup is enforced here, not by a constraint). The
+        // caregiver can read their own requests via RLS (requested_by = actor).
+        const existingPending = await trx
+          .selectFrom('approval_requests')
+          .select('approval_id')
+          .where('requested_by', '=', actingUserId)
+          .where('action_type', '=', ApprovalActionType.CAREGIVER_LINK_CHANGE)
+          .where('status', '=', ApprovalStatus.PENDING)
+          .where(sql<boolean>`action_payload->>'link_id' = ${linkId}`)
+          .executeTakeFirst();
+        if (existingPending) {
+          throw ProblemException.conflict('Bu bağlantı için zaten bekleyen bir onay talebi var.');
+        }
+
         // Caregiver-initiated → gate. The stored payload carries the caregiver
         // id so an approving family member's decision can re-run the unlink
         // (via the SECURITY DEFINER function) as the caregiver.
