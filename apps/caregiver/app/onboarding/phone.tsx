@@ -24,7 +24,12 @@ export default function PhoneScreen() {
     setIsLoading(true);
     setError('');
     try {
-      const normalized = '+1' + phone.replace(/\D/g, '');
+      // Robust to the user typing the country code or not: 11 digits starting
+      // with 1 → already includes +1; 10 digits → prepend +1. Avoids the
+      // double-prefix bug (+1 416... → +114165550123) that would send the OTP
+      // to a wrong number and silently break login.
+      const digits = phone.replace(/\D/g, '');
+      const normalized = digits.length === 11 && digits.startsWith('1') ? `+${digits}` : `+1${digits}`;
       await coreApi.post('/auth/otp/request', { phone_e164: normalized });
       router.push({ pathname: '/onboarding/otp', params: { phone: normalized } });
     } catch (e) {
