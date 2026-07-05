@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import OnboardingScreen from '@/components/OnboardingScreen';
-import { BASE_URL } from '@/lib/api';
+import { coreApi, ApiError } from '@/lib/api';
 import { COLORS, FONT_SIZE, SPACING, BORDER_RADIUS } from '@sinalytix/ui';
 
 function normalizePhone(raw: string): string {
@@ -36,28 +36,19 @@ export default function PhoneScreen() {
     }
     setLoading(true);
     try {
-      const resp = await fetch(`${BASE_URL}/api/v1/auth/otp/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: normalized }),
-      });
-
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        if (resp.status === 429) {
-          setError('Çok fazla kod isteği. 10 dakika bekle.');
-        } else {
-          setError(body.detail ?? 'Kod gönderilemedi. Lütfen tekrar dene.');
-        }
-        return;
-      }
-
+      await coreApi.post('/auth/otp/request', { phone_e164: normalized });
       router.push({
         pathname: '/onboarding/otp',
         params: { phone: normalized, ...(flow ? { flow } : {}) },
       });
-    } catch {
-      setError('Bağlantı hatası. İnterneti kontrol et.');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        setError('Çok fazla kod isteği. 10 dakika bekle.');
+      } else if (err instanceof ApiError) {
+        setError(err.message || 'Kod gönderilemedi. Lütfen tekrar dene.');
+      } else {
+        setError('Bağlantı hatası. İnterneti kontrol et.');
+      }
     } finally {
       setLoading(false);
     }

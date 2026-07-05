@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-nativ
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useOnboardingStore, persistOnboardingCompleted } from '@/store/onboarding';
 import { useAuthStore } from '@/store/auth';
-import { BASE_URL, ApiError } from '@/lib/api';
+import { BASE_URL, coreApi, ApiError } from '@/lib/api';
 import OnboardingScreen from '@/components/OnboardingScreen';
 import { COLORS, FONT_SIZE, SPACING, BORDER_RADIUS } from '@sinalytix/ui';
 
@@ -65,31 +65,10 @@ export default function OtpScreen() {
     setLoading(true);
     setError('');
     try {
-      const resp = await fetch(`${BASE_URL}/api/v1/auth/otp/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, code }),
-      });
-
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        const detail: string = body.detail ?? 'Kod hatalı.';
-        if (resp.status === 429) {
-          setError('Çok fazla deneme. Lütfen yeni kod iste.');
-          setRetries(MAX_RETRIES);
-        } else {
-          const nextRetry = retries + 1;
-          setRetries(nextRetry);
-          if (nextRetry >= MAX_RETRIES) {
-            setError('Çok fazla deneme. Lütfen yeni kod iste.');
-          } else {
-            setError(`${detail} (${nextRetry}/${MAX_RETRIES})`);
-          }
-        }
-        return;
-      }
-
-      const data = await resp.json();
+      const data = await coreApi.post<{ access_token: string; refresh_token: string; user_id: string }>(
+        '/auth/otp/verify',
+        { phone_e164: phone, code, app_context: 'patient' },
+      );
       await setTokens(data.access_token, data.refresh_token, data.user_id);
       clearTimer();
 
@@ -106,8 +85,17 @@ export default function OtpScreen() {
       setStep('done');
       router.replace('/onboarding/done');
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
+      if (err instanceof ApiError && err.status === 429) {
+        setError('Çok fazla deneme. Lütfen yeni kod iste.');
+        setRetries(MAX_RETRIES);
+      } else if (err instanceof ApiError) {
+        const nextRetry = retries + 1;
+        setRetries(nextRetry);
+        if (nextRetry >= MAX_RETRIES) {
+          setError('Çok fazla deneme. Lütfen yeni kod iste.');
+        } else {
+          setError(`${err.message || 'Kod hatalı.'} (${nextRetry}/${MAX_RETRIES})`);
+        }
       } else {
         setError('Bir hata oluştu. Lütfen tekrar dene.');
       }
@@ -146,17 +134,13 @@ export default function OtpScreen() {
     setRetries(0);
 
     try {
-      const resp = await fetch(`${BASE_URL}/api/v1/auth/otp/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }),
-      });
-      if (resp.status === 429) {
+      await coreApi.post('/auth/otp/request', { phone_e164: phone });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
         setError('Çok fazla kod isteği. 10 dakika bekle.');
-        return;
+      } else {
+        setError('Kod gönderilemedi. İnterneti kontrol et.');
       }
-    } catch {
-      setError('Kod gönderilemedi. İnterneti kontrol et.');
       return;
     }
 
