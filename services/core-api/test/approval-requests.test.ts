@@ -8,6 +8,7 @@ import { ApprovalRequestsService } from '../src/approval-requests/approval-reque
 import { ApprovalGateService } from '../src/approval-requests/approval-gate.service';
 import { CaregiverLinksService } from '../src/caregiver-links/caregiver-links.service';
 import { RedeemRateLimiter } from '../src/common/redeem-rate-limiter.service';
+import { SystemConfigService } from '../src/common/system-config.service';
 import { createUser, setupTestDatabase, truncateAll } from './setup';
 
 describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', () => {
@@ -23,7 +24,12 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
     ({ ownerPool, ownerDb, appPool, appDb } = await setupTestDatabase());
     redis = new Redis(process.env.REDIS_URL as string);
     approvals = new ApprovalRequestsService(appDb);
-    caregiverLinks = new CaregiverLinksService(appDb, new RedeemRateLimiter(redis), new ApprovalGateService(appDb));
+    caregiverLinks = new CaregiverLinksService(
+      appDb,
+      new RedeemRateLimiter(redis),
+      new ApprovalGateService(appDb, new SystemConfigService(appDb)),
+      new SystemConfigService(appDb),
+    );
   });
 
   beforeEach(async () => {

@@ -4,8 +4,7 @@ import type { Database } from '@sinalytix/db';
 import { approvalConfigRequiresApproval, approvalCountEligibleApprovers, approvalRequestCreate } from '@sinalytix/db';
 import { ApprovalStatus, RequestedByRole, type ApprovalActionType, type GatedActionResult } from '@sinalytix/domain';
 import { KYSELY } from '../common/db.module';
-
-const REQUEST_TTL_MS = 48 * 60 * 60 * 1000; // 48h expiry (Module 3); the 24h reminder + expiry sweep are a job-runner concern (deferred, D14).
+import { SystemConfigService } from '../common/system-config.service';
 
 export interface GateInput {
   patientId: string;
@@ -33,7 +32,10 @@ export interface GateInput {
  */
 @Injectable()
 export class ApprovalGateService {
-  constructor(@Inject(KYSELY) private readonly db: Kysely<Database>) {}
+  constructor(
+    @Inject(KYSELY) private readonly db: Kysely<Database>,
+    private readonly systemConfig: SystemConfigService,
+  ) {}
 
   async maybeGate(trx: Kysely<Database>, input: GateInput): Promise<GatedActionResult> {
     const requires = await approvalConfigRequiresApproval(trx, input.patientId, input.actionType);
@@ -44,7 +46,11 @@ export class ApprovalGateService {
     }
 
     const approvers = await approvalCountEligibleApprovers(trx, input.patientId, input.requesterId);
-    const expiresAt = new Date(Date.now() + REQUEST_TTL_MS);
+    // K10/A3: was a hardcoded 48h. `approval.expiry_hours` (K4) is an
+    // ops-tunable SystemConfig key; the 24h reminder + expiry sweep remain a
+    // job-runner concern (deferred, D14) and will read
+    // `approval.reminder_hours` from the same registry.
+    const expiresAt = new Date(Date.now() + (await this.systemConfig.getMs('approval.expiry_hours', 'hour')));
     const requestedByName = await this.requesterName(trx, input.requesterId, input.requesterRole);
     const base = {
       patientId: input.patientId,

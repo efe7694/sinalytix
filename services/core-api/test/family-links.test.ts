@@ -7,6 +7,7 @@ import { FamilyLinksService } from '../src/family-links/family-links.service';
 import { EmergencyContactsService } from '../src/emergency-contacts/emergency-contacts.service';
 import { ConsentGrantsService } from '../src/consent-grants/consent-grants.service';
 import { RedeemRateLimiter } from '../src/common/redeem-rate-limiter.service';
+import { SystemConfigService } from '../src/common/system-config.service';
 import { withRlsContext } from '@sinalytix/db';
 import { createUser, setupTestDatabase, truncateAll } from './setup';
 
@@ -24,7 +25,7 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
     ({ ownerPool, ownerDb, appPool, appDb } = await setupTestDatabase());
     redis = new Redis(process.env.REDIS_URL as string);
     consentGrantsService = new ConsentGrantsService(appDb);
-    service = new FamilyLinksService(appDb, consentGrantsService, new RedeemRateLimiter(redis));
+    service = new FamilyLinksService(appDb, consentGrantsService, new RedeemRateLimiter(redis), new SystemConfigService(appDb));
     ecService = new EmergencyContactsService(appDb, redis);
   });
 

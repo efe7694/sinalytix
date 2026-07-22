@@ -10,6 +10,7 @@ import {
   setRlsVar,
   withRlsContext,
 } from '@sinalytix/db';
+import { sessionPolicyFor } from '@sinalytix/config';
 import {
   AppContext,
   AuthMethod,
@@ -43,9 +44,7 @@ export interface RequestMeta {
   uaHash?: string;
 }
 
-const MAX_CONCURRENT_SESSIONS = 5; // Module 1 §3.5
-const SESSION_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
-const SESSION_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
+
 
 interface IssuedSession {
   session_id: string;
@@ -70,16 +69,25 @@ export class AuthService {
 
   // ── Session/token issuance (shared by signup/otp-verify/login/mfa) ─────
 
-  private async enforceSessionLimit(trx: Kysely<Database>, userId: string): Promise<void> {
+  /**
+   * K9/A4: the concurrency cap is per-`app_context`, not global — an admin
+   * gets 2, everyone else 5 (`SESSION_POLICY`, @sinalytix/config). The count
+   * is scoped to the SAME app_context for the same reason the cap differs:
+   * sessions are per-app (no SSO until V2), so a patient logging in on their
+   * phone must not evict their own admin console session, or vice versa.
+   */
+  private async enforceSessionLimit(trx: Kysely<Database>, userId: string, appContext: string): Promise<void> {
+    const maxConcurrent = sessionPolicyFor(appContext).maxConcurrent;
     const active = await trx
       .selectFrom('sessions')
       .select(['session_id'])
       .where('user_id', '=', userId)
+      .where('app_context', '=', appContext)
       .where('revoked_at', 'is', null)
       .orderBy('created_at', 'asc')
       .execute();
-    if (active.length >= MAX_CONCURRENT_SESSIONS) {
-      const toRevoke = active.slice(0, active.length - (MAX_CONCURRENT_SESSIONS - 1));
+    if (active.length >= maxConcurrent) {
+      const toRevoke = active.slice(0, active.length - (maxConcurrent - 1));
       for (const s of toRevoke) {
         await trx
           .updateTable('sessions')
@@ -94,7 +102,8 @@ export class AuthService {
     trx: Kysely<Database>,
     params: { userId: string; roles: string[]; appContext: string; meta: RequestMeta },
   ): Promise<IssuedSession> {
-    await this.enforceSessionLimit(trx, params.userId);
+    await this.enforceSessionLimit(trx, params.userId, params.appContext);
+    const policy = sessionPolicyFor(params.appContext);
     const now = Date.now();
     const session = await trx
       .insertInto('sessions')
@@ -103,8 +112,8 @@ export class AuthService {
         app_context: params.appContext,
         platform: params.meta.platform,
         device_label: params.meta.deviceLabel ?? null,
-        max_at: new Date(now + SESSION_MAX_AGE_MS),
-        idle_at: new Date(now + SESSION_IDLE_MS),
+        max_at: new Date(now + policy.absoluteMs),
+        idle_at: new Date(now + policy.idleMs),
         ip_hash: params.meta.ipHash ?? null,
         ua_hash: params.meta.uaHash ?? null,
       })

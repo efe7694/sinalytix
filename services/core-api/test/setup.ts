@@ -78,6 +78,13 @@ export async function setupTestDatabase(): Promise<TestDbHandles> {
   return { ownerPool, ownerDb, appPool, appDb };
 }
 
+/**
+ * Per-test cleanup list. `system_config` / `feature_flags` are deliberately
+ * ABSENT: they are migration-seeded reference data, not per-test fixtures —
+ * truncating them would leave every service silently running on registry
+ * defaults and make the config-read tests assert nothing. A test that needs
+ * a different config value should edit the row and restore it.
+ */
 const DOMAIN_TABLES = [
   'approval_requests',
   'patient_approval_configs',

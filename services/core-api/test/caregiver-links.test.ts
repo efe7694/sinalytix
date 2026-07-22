@@ -7,6 +7,7 @@ import Redis from 'ioredis';
 import { CaregiverLinksService } from '../src/caregiver-links/caregiver-links.service';
 import { RedeemRateLimiter } from '../src/common/redeem-rate-limiter.service';
 import { ApprovalGateService } from '../src/approval-requests/approval-gate.service';
+import { SystemConfigService } from '../src/common/system-config.service';
 import { createUser, setupTestDatabase, truncateAll } from './setup';
 
 describe('CaregiverLinksService (Module 2 §3.4, Faz 1 Slice 4, LINK_01)', () => {
@@ -20,7 +21,12 @@ describe('CaregiverLinksService (Module 2 §3.4, Faz 1 Slice 4, LINK_01)', () =>
   beforeAll(async () => {
     ({ ownerPool, ownerDb, appPool, appDb } = await setupTestDatabase());
     redis = new Redis(process.env.REDIS_URL as string);
-    service = new CaregiverLinksService(appDb, new RedeemRateLimiter(redis), new ApprovalGateService(appDb));
+    service = new CaregiverLinksService(
+      appDb,
+      new RedeemRateLimiter(redis),
+      new ApprovalGateService(appDb, new SystemConfigService(appDb)),
+      new SystemConfigService(appDb),
+    );
   });
 
   beforeEach(async () => {
