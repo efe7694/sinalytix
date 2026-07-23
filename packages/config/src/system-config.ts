@@ -119,6 +119,30 @@ export const SYSTEM_CONFIG_REGISTRY = {
     description: 'Klinik belge üst sınırı (MB) — B10 / HCP Doc 5.',
   },
 
+  // ── Rate limit (Modül 2 §1.5) ───────────────────────────────────────────
+  // K11 / Modül 2 §9.4: "§1.5 değerleri başlangıç sabiti; yük testi sonrası
+  // SystemConfig üzerinden kalibre edilir (K10)." So these are keys from day
+  // one rather than constants someone has to redeploy to change — the whole
+  // point is that a load test can move them.
+  'ratelimit.read_per_min': {
+    schema: positiveInt,
+    default: 300,
+    requiresSecondApproval: false,
+    description: 'Kullanıcı başına dakikalık okuma isteği tavanı (Modül 2 §1.5).',
+  },
+  'ratelimit.write_per_min': {
+    schema: positiveInt,
+    default: 60,
+    requiresSecondApproval: false,
+    description: 'Kullanıcı başına dakikalık yazma isteği tavanı (Modül 2 §1.5).',
+  },
+  'ratelimit.auth_per_min': {
+    schema: positiveInt,
+    default: 10,
+    requiresSecondApproval: false,
+    description: 'Kimlik başına dakikalık auth ucu tavanı (Modül 2 §1.5).',
+  },
+
   // ── AI maliyet tavanları (Modül 3 §12.4, Modül 4 §6) ────────────────────
   'ai.daily_cost_cap_user': {
     schema: positiveInt,
