@@ -76,10 +76,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: RLS coverage check (Module 3 §9.2 — no new table merges without RLS)
         run: pnpm --filter @sinalytix/db run check:rls
-      - name: Build workspace packages (@sinalytix/domain, db, policy-engine, audit)
-        run: pnpm --filter @sinalytix/domain --filter @sinalytix/db --filter @sinalytix/policy-engine --filter @sinalytix/audit run build
+      - name: Build workspace packages (@sinalytix/domain, db, policy-engine, audit, config, i18n)
+        run: pnpm --filter @sinalytix/domain --filter @sinalytix/db --filter @sinalytix/policy-engine --filter @sinalytix/audit --filter @sinalytix/config --filter @sinalytix/i18n run build
       - name: Type-check
-        run: pnpm --filter @sinalytix/domain --filter @sinalytix/db --filter @sinalytix/policy-engine --filter @sinalytix/audit --filter @sinalytix/core-api run type-check
+        run: pnpm --filter @sinalytix/domain --filter @sinalytix/db --filter @sinalytix/policy-engine --filter @sinalytix/audit --filter @sinalytix/config --filter @sinalytix/i18n --filter @sinalytix/core-api run type-check
       - name: Prepare ephemeral test env (CI-only secrets, not committed)
         working-directory: services/core-api
         run: |
