@@ -6,7 +6,7 @@ interface CursorPayload {
   id: string;
 }
 
-/** Module 2 §1.5 — cursor is opaque to the client; encodes the last row's
+/** Module 2 §1.4 — cursor is opaque to the client; encodes the last row's
  * sort key so a later page can resume `WHERE (created_at, id) < (?, ?)`. */
 export function encodeCursor(createdAt: Date, id: string): string {
   const payload: CursorPayload = { createdAt: createdAt.toISOString(), id };

@@ -3,7 +3,7 @@ import type Redis from 'ioredis';
 import { REDIS } from './redis.module';
 import { sha256Hex } from './hash.util';
 
-/** Module 2 §6.1: same key retained 24h, same key+body replays without
+/** Module 2 §1.2: same key retained 24h, same key+body replays without
  * re-executing side effects, same key+different body → 409. */
 const TTL_SECONDS = 24 * 60 * 60;
 
