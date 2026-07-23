@@ -60,6 +60,43 @@ describe('Faz 0 auth flows (Module 2 §3.1)', () => {
     return JSON.parse(verify.body);
   }
 
+  it('SECURITY: OTP verify refuses a non-self-service app_context — no self-minted admin/hcp (K9 regression)', async () => {
+    // K9 added `admin` to AppContext and widened the sessions CHECK to accept
+    // it. Without the self-service gate, this call would mint a roles=[admin]
+    // user with an admin session — a self-service superadmin primitive.
+    const phone = '+14165551900';
+    await inject(app, { method: 'POST', url: '/v1/auth/otp/request', payload: { phone_e164: phone } });
+    const code = await redis.get(`otp:code:${createHash('sha256').update(phone).digest('hex')}`);
+
+    for (const ctx of ['admin', 'hcp']) {
+      const res = await inject(app, {
+        method: 'POST',
+        url: '/v1/auth/otp/verify',
+        payload: { phone_e164: phone, code, app_context: ctx },
+      });
+      expect(res.statusCode).toBe(400);
+    }
+
+    // No user, no session, no admin_users row was created by the rejected calls.
+    const users = await ownerDb.selectFrom('users').select('user_id').where('phone_e164', '=', phone).execute();
+    expect(users).toHaveLength(0);
+    const admins = await ownerDb.selectFrom('admin_users').select('user_id').execute();
+    expect(admins).toHaveLength(0);
+  });
+
+  it('SECURITY: Apple/Google SSO signup refuses admin/hcp app_context (K9 regression)', async () => {
+    // Reaches the guard before any id_token verification, so an unverified
+    // token is fine for this assertion — the context is rejected first.
+    for (const ctx of ['admin', 'hcp']) {
+      const res = await inject(app, {
+        method: 'POST',
+        url: '/v1/auth/signup',
+        payload: { auth_method: 'apple_sso', app_context: ctx, id_token: 'x' },
+      });
+      expect(res.statusCode).toBe(400);
+    }
+  });
+
   it('signup via OTP creates an incomplete patient user + auto-created patient_profile, and GET /me reflects it', async () => {
     const auth = await otpSignup('+14165551000');
     expect(auth.status).toBe('incomplete');
