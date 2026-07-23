@@ -305,3 +305,27 @@ Spec §1.3 kod listesini "alt-küme" diye veriyor; eksik kalanlar EXT olarak iş
 **Onay açıklamaları i18n'e taşındı.** `describe()` DTO'ya gömülü Türkçe cümleler üretiyordu; sunucu-taraflı tek mapper doğru karardı (D14) ama Fransızca bir aile üyesi, **yanlış anlamanın en pahalı olduğu ekranda** (SOS zincirinin aradığı numaranın değiştirilmesini onaylamak) Türkçe okuyordu. Artık `Accept-Language` ile çözülüyor.
 
 **Sonraki slice'a bilinçli ayrıldı — 4b: `ec_change` kapısının bağlanması.** Enum ve varsayılan hazır, ama EC ekleme/çıkarma'yı kapıya almak yanıt şeklini değiştiriyor (`create` artık "kişi" yerine "aile onayı bekliyor" da dönebilir) ve Patient app'te karşılık gelen bir bekleme durumu UI'ı gerekiyor. Bu slice zaten migration + enum + iki davranış düzeltmesi + yeni uç taşıyor; ikisini birleştirmek incelenemez bir PR yapardı.
+
+### D15.4b — `ec_change` kapısının bağlanması
+
+FAM-12 §3 acil kişi değişikliğini varsayılan **"onay gerekli"** yapıyor. Slice 4 enum'u ve varsayılanı hizaladı; bu slice kapıyı gerçekten bağlıyor.
+
+**Neden `update` de kapıda (spec açıklaması yalnız "ekleme veya çıkarma" diyor):** satırın etiketi "EC (Acil Kişi) **değişikliği**" ve aksiyon tipinin adı `ec_change`. Üstelik düzenleme üçünün **en tehlikelisi**: telefon numarasını değiştirmek, kişinin adı doğru görünmeye devam ederken SOS zincirini sessizce başka birine yönlendirir. Ekleme/çıkarmayı kapıya alıp düzenlemeyi bırakmak, en geniş deliği açık bırakmak olurdu.
+
+**`reorder` bilinçli olarak kapı DIŞINDA:** sunucu sıralamanın tam olarak mevcut kümeyi içerdiğini doğruluyor, dolayısıyla yeniden sıralama kimseyi zincire sokamaz veya zincirden çıkaramaz — yalnız sırayı değiştirir. `verify-phone` de dışarıda: doğrulama bir değişiklik değil.
+
+**Bu, D12'nin Critical'ının tam şekli.** Onaylanmış bir `ec_change` yazması, satırın sahibi hastanın değil **onaylayanın** oturumunda gerçekleşiyor. Slice 3'te aynı ihtiyaç bir RLS UPDATE policy'siyle çözülmüş, ve Postgres'in kolon-düzeyi `WITH CHECK`'i olmadığı için o policy genel `PATCH /emergency-contacts/:id` yolunu ve soft-delete'i her bağlı aile üyesine açmıştı. Bu yüzden migration 0017 **SECURITY DEFINER fonksiyonlar** ekliyor, her biri yalnız dokunduğu kolonlara kapsamlı, ve `emergency_contacts` **hiç yeni policy almıyor**. Fonksiyonlar `p_patient_id` üzerinden yetkilendiriyor; çağıran bunu `approval_requests.patient_id`'den alıyor — onaylayanın oturumundan değil, istemcinin etkileyebildiği payload'dan hiç değil. İki güvenlik testi bunu tutuyor: aile üyesinin doğrudan yazma denemesi 0 satır etkiliyor, ve payload'a başka bir hastanın id'si enjekte edilse bile yazma o hastaya taşınmıyor.
+
+**Slot ve max-3 onay anında yeniden hesaplanıyor**, talep anında değil: 48 saatlik onay penceresi, hastanın başka bir kişiyi eklemesine/çıkarmasına fazlasıyla yetiyor, yani 40 saat önce boş olan slot artık dolu olabilir.
+
+**Onaylanmış telefon düzenlemesi `phone_verified`'ı sıfırlıyor** — eski numaranın doğrulanmışlığı yeni numaraya taşınamaz.
+
+**Onboarding yapısal olarak etkilenmiyor:** ilk acil kişisini ekleyen hastanın henüz aile bağlantısı yok, kapı sıfır uygun onaylayıcı bulup işlemi hemen çalıştırıyor (K4 deadlock override). Ayrı testle tutuluyor.
+
+**Yanıt şekli birleşim (union), opsiyonel alan değil:** iki sonuç gerçekten farklı, ve ikincisini işlemeyi unutan istemci boş bir kart render etmek yerine derlenmemeli. `executed: false` **hiçbir şeyin değişmediği** anlamına geliyor.
+
+**Patient app:** ertelenen bir **ekleme** listeye iyimser satır koymuyor (koysaydı hastaya SOS zincirinin artık o kişiye ulaştığını söylerdi — ulaşmıyor), ertelenen bir **kaldırma** ise kişiyi listeye **geri koyuyor** (hâlâ canlı ve hâlâ aranacak numara; gizleyen bir liste acil durumda aktif olarak yanıltıcı olurdu). Uyarı metni ne olduğunu, neyin değişmediğini, 48 saati ve kapatma yolunu açıkça söylüyor.
+
+### D15.4b.1 — Slice 4b bağımsız inceleme bulgusu (Low, düzeltildi)
+
+**Finding 2:** ertelenmiş EC create/update onay anında `emergency_contacts_patient_phone_uq` kısmi-unique index'ini yeniden kontrol etmiyordu. İki eşzamanlı-bekleyen aynı-telefon create talebi (ikisi de talep anındaki kontrolü geçer, çünkü beklerken hiçbiri yazılmaz) → ikinci onayda ham unique-index ihlali → onaylayana 500 + kararın geri alınması. Veri bütünlüğü index'le korunuyordu; sorun UX/dayanıklılık. **Düzeltme:** `executeDeferredAction` artık `ecPhoneExists` ile aynı transaction içinde ön-kontrol yapıyor — create için telefon zaten aktif bir kişiyse tatmin edilmiş no-op (hasta niyeti "bu numara bir acil kişi olsun" zaten sağlanmış), update için çakışan telefon değişikliği atlanıyor (ad/ilişki uygulanır, numara olduğu gibi kalır — SOS zinciri geçerli, tekrarsız bir numarada kalır). Test: iki aynı-telefon create → ikinci onay no-op, 500 yok, tek kişi. (Reviewer'ın doğruladığı D12 crux'u — cross-tenant yazma — GÜVENLİ; bu yalnız aynı-hasta eşzamanlı-bekleyen kenar durumu.)

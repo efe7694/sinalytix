@@ -11,6 +11,8 @@ import {
 } from '@sinalytix/domain';
 import { KYSELY } from '../common/db.module';
 import { ApiException } from '../common/api.exception';
+import { ApiErrorCode } from '@sinalytix/domain';
+import { ecApplyCreate, ecApplyRemove, ecApplyUpdate, ecNextSortOrder } from '@sinalytix/db';
 import { describeApprovalAction } from '@sinalytix/i18n';
 import type { Locale } from '@sinalytix/i18n';
 
@@ -124,7 +126,11 @@ export class ApprovalRequestsService {
       }
 
       if (decision === 'approved') {
-        await this.executeDeferredAction(trx, decided.action_type, decided.action_payload);
+        // `decided.patient_id` comes from the request row, which only the
+        // patient's own gated action could have created — never from the
+        // approver's session and never from the (client-influenced) payload.
+        // That is what makes the SECURITY DEFINER executors safe to call here.
+        await this.executeDeferredAction(trx, decided.action_type, decided.action_payload, decided.patient_id);
       }
     });
   }
@@ -133,14 +139,113 @@ export class ApprovalRequestsService {
    * executor is a SECURITY DEFINER function that authorizes by the stored
    * requester id (not the approving family member's session), which is what
    * lets a family member's approval carry out a caregiver's action. */
-  private async executeDeferredAction(trx: Kysely<Database>, actionType: string, payload: unknown): Promise<void> {
+  private async executeDeferredAction(
+    trx: Kysely<Database>,
+    actionType: string,
+    payload: unknown,
+    patientId: string,
+  ): Promise<void> {
     if (actionType === ApprovalActionType.CAREGIVER_LINK_CHANGE) {
       const p = payload as { link_id: string; requester_caregiver_id: string };
       await unlinkCaregiverLink(trx, p.link_id, p.requester_caregiver_id);
       return;
     }
-    // family_link_permission_change has no trigger endpoint this slice (its
-    // product semantics await clarification — see DEVIATIONS D14), so no
-    // pending request of that type can exist to reach here.
+
+    if (actionType === ApprovalActionType.EC_CHANGE) {
+      const p = payload as {
+        op: 'create' | 'update' | 'remove';
+        ec_id?: string;
+        relationship?: string | null;
+        first_name?: string | null;
+        last_name?: string | null;
+        phone?: string | null;
+      };
+      if (p.op === 'create') {
+        // Everything below is re-resolved at APPROVAL time, not request time:
+        // 48 hours is plenty for the patient to have freed/filled a slot or —
+        // via a second, separately-approved pending request — already added
+        // this very phone. Two co-pending same-phone creates both pass the
+        // request-time duplicate check (neither is inserted while pending), so
+        // without this the second approval trips the partial-unique index and
+        // 500s the approver + rolls back the decision (independent review,
+        // Finding 2). If the phone is already an active contact, the create is
+        // a satisfied no-op — the patient's intent ("have this number as a
+        // contact") already holds.
+        if (await this.ecPhoneExists(trx, patientId, p.phone ?? '')) {
+          return;
+        }
+        const sortOrder = await ecNextSortOrder(trx, patientId);
+        if (sortOrder === null) {
+          throw new ApiException({
+            code: ApiErrorCode.CONFLICT,
+            messageKey: 'ec.max_contacts',
+            messageParams: { max: 3 },
+          });
+        }
+        await ecApplyCreate(trx, {
+          patientId,
+          relationship: p.relationship ?? '',
+          firstName: p.first_name ?? '',
+          lastName: p.last_name ?? '',
+          phone: p.phone ?? '',
+          sortOrder,
+        });
+        return;
+      }
+      if (p.op === 'update' && p.ec_id) {
+        // Same guard for a phone edit that now collides with another active
+        // contact's number (added/edited while this request sat pending).
+        // Skip only the phone field in that case — the rest of the edit
+        // (name/relationship) is still applied, and the phone simply stays
+        // what it was, which is the safe outcome (the SOS chain keeps a valid,
+        // non-duplicated number).
+        const phoneCollides =
+          p.phone != null && (await this.ecPhoneExists(trx, patientId, p.phone, p.ec_id));
+        await ecApplyUpdate(trx, {
+          ecId: p.ec_id,
+          patientId,
+          relationship: p.relationship,
+          firstName: p.first_name,
+          lastName: p.last_name,
+          phone: phoneCollides ? null : p.phone,
+        });
+        return;
+      }
+      if (p.op === 'remove' && p.ec_id) {
+        // A false return means the contact is already gone — the patient
+        // removed it another way while the request sat pending. Approving a
+        // no-op is the right outcome, not an error: the approver's intent
+        // ("yes, remove it") is satisfied either way.
+        await ecApplyRemove(trx, p.ec_id, patientId);
+        return;
+      }
+      return;
+    }
+
+    // `profile_edit` and `account_delete` are valid config keys (FAM-12 §3)
+    // but have no gated trigger endpoint yet — profile_edit defaults to
+    // ungated, and account deletion is "bilgilendirme" (notify, never block),
+    // so no pending request of either type can reach here.
+  }
+
+  /** Is `phone` already an active emergency contact for `patientId`? Runs on
+   * the same `trx` as the deferred executor (owner-privileged inside the
+   * decide transaction), so it sees the patient's own rows including any
+   * added by a sibling approval in this same window. `excludeEcId` skips the
+   * row being edited. */
+  private async ecPhoneExists(
+    trx: Kysely<Database>,
+    patientId: string,
+    phone: string,
+    excludeEcId?: string,
+  ): Promise<boolean> {
+    let q = trx
+      .selectFrom('emergency_contacts')
+      .select('ec_id')
+      .where('patient_id', '=', patientId)
+      .where('phone', '=', phone)
+      .where('deleted_at', 'is', null);
+    if (excludeEcId) q = q.where('ec_id', '!=', excludeEcId);
+    return (await q.executeTakeFirst()) !== undefined;
   }
 }

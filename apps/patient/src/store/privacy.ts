@@ -42,6 +42,17 @@ export interface UserPreferences {
   sos_audio_enabled: boolean;
 }
 
+/**
+ * `POST /patients/:id/emergency-contacts` and `DELETE /emergency-contacts/:id`
+ * both return this (Modül 2 §3.4 + FAM-12 `ec_change`): the change may have
+ * been applied, or deferred behind family approval.
+ */
+interface EcMutationResult {
+  executed: boolean;
+  contact: EmergencyContact | null;
+  approval_id: string | null;
+}
+
 interface PrivacyState {
   emergencyContacts: EmergencyContact[];
   caregiverLink: CaregiverLink | null;
@@ -55,12 +66,23 @@ interface PrivacyState {
   verifyError: string | null;
   /** Set from ApiError.retryAfterSeconds on a 429 — lets the UI show a countdown. */
   verifyRetryAfterSeconds: number | null;
+  /**
+   * Set when an emergency-contact change was DEFERRED behind family approval
+   * (FAM-12 `ec_change`). Nothing has changed on the server yet — the family
+   * has 48 hours to decide (K4) — so the UI must say "waiting" rather than
+   * showing the contact as saved. Cleared on the next successful load or
+   * mutation.
+   */
+  pendingEcApprovalId: string | null;
 }
 
 interface PrivacyActions {
   loadPrivacyData(): Promise<void>;
-  addEmergencyContact(input: CreateECInput): Promise<void>;
-  removeEmergencyContact(ecId: string): Promise<void>;
+  /** Resolves `{ pendingApproval: true }` when the change was deferred behind
+   * family approval rather than applied. */
+  addEmergencyContact(input: CreateECInput): Promise<{ pendingApproval: boolean }>;
+  removeEmergencyContact(ecId: string): Promise<{ pendingApproval: boolean }>;
+  dismissPendingEcApproval(): void;
   reorderEmergencyContacts(orderedIds: string[]): Promise<void>;
   requestPhoneVerification(ecId: string): Promise<void>;
   confirmPhoneVerification(ecId: string, code: string): Promise<void>;
@@ -94,6 +116,7 @@ export const usePrivacyStore = create<PrivacyState & PrivacyActions>((set, get) 
   verifyingEcId: null,
   verifyError: null,
   verifyRetryAfterSeconds: null,
+  pendingEcApprovalId: null,
 
   loadPrivacyData: async () => {
     set({ loading: true, error: null });
@@ -135,13 +158,21 @@ export const usePrivacyStore = create<PrivacyState & PrivacyActions>((set, get) 
   },
 
   addEmergencyContact: async (input) => {
-    set({ saving: true, error: null });
+    set({ saving: true, error: null, pendingEcApprovalId: null });
     try {
-      const created = await coreApi.post<EmergencyContact>(`/patients/${patientId()}/emergency-contacts`, input);
+      const res = await coreApi.post<EcMutationResult>(`/patients/${patientId()}/emergency-contacts`, input);
+      if (!res.executed) {
+        // Deferred: do NOT add anything to the list — the server has written
+        // nothing. Showing an optimistic row here would tell the patient the
+        // contact is live when the SOS chain would not actually reach them.
+        set({ saving: false, pendingEcApprovalId: res.approval_id });
+        return { pendingApproval: true };
+      }
       set((s) => ({
-        emergencyContacts: [...s.emergencyContacts, created],
+        emergencyContacts: res.contact ? [...s.emergencyContacts, res.contact] : s.emergencyContacts,
         saving: false,
       }));
+      return { pendingApproval: false };
     } catch (err) {
       set({
         saving: false,
@@ -151,14 +182,26 @@ export const usePrivacyStore = create<PrivacyState & PrivacyActions>((set, get) 
     }
   },
 
+  dismissPendingEcApproval: () => set({ pendingEcApprovalId: null }),
+
   removeEmergencyContact: async (ecId) => {
     const previous = get().emergencyContacts;
+    // Optimistic removal, reverted below if the server defers or fails.
     set((s) => ({
       emergencyContacts: s.emergencyContacts.filter((ec) => ec.ec_id !== ecId),
+      pendingEcApprovalId: null,
     }));
 
     try {
-      await coreApi.delete(`/emergency-contacts/${ecId}`);
+      const res = await coreApi.delete<EcMutationResult>(`/emergency-contacts/${ecId}`);
+      if (!res.executed) {
+        // Deferred → put the contact BACK. It is still live and still the
+        // number SOS dials until the family approves; a list that hides it
+        // would be actively misleading in an emergency.
+        set({ emergencyContacts: previous, pendingEcApprovalId: res.approval_id });
+        return { pendingApproval: true };
+      }
+      return { pendingApproval: false };
     } catch (err) {
       set({ emergencyContacts: previous });
       throw err;

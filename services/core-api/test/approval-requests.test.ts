@@ -11,6 +11,7 @@ import { RedeemRateLimiter } from '../src/common/redeem-rate-limiter.service';
 import { SystemConfigService } from '../src/common/system-config.service';
 import { createUser, setupTestDatabase, truncateAll } from './setup';
 import { APPROVAL_DEFAULT_REQUIRED } from '@sinalytix/domain';
+import { EmergencyContactsService } from '../src/emergency-contacts/emergency-contacts.service';
 import { approvalConfigRequiresApproval, withRlsContext } from '@sinalytix/db';
 
 describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', () => {
@@ -21,6 +22,7 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
   let redis: Redis;
   let approvals: ApprovalRequestsService;
   let caregiverLinks: CaregiverLinksService;
+  let emergencyContacts: EmergencyContactsService;
 
   beforeAll(async () => {
     ({ ownerPool, ownerDb, appPool, appDb } = await setupTestDatabase());
@@ -31,6 +33,11 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
       new RedeemRateLimiter(redis),
       new ApprovalGateService(appDb, new SystemConfigService(appDb)),
       new SystemConfigService(appDb),
+    );
+    emergencyContacts = new EmergencyContactsService(
+      appDb,
+      new ApprovalGateService(appDb, new SystemConfigService(appDb)),
+      redis,
     );
   });
 
@@ -388,6 +395,230 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
           .values({ patient_id: patient.user_id, action_type: 'family_link_permission_change', requires_approval: true })
           .execute(),
       ).rejects.toThrow();
+    });
+  });
+
+  describe('ec_change gate (FAM-12 §3, D15.4b)', () => {
+    async function ecFor(patientId: string, phone = '+14165551111'): Promise<string> {
+      const row = await ownerDb
+        .insertInto('emergency_contacts')
+        .values({
+          patient_id: patientId,
+          relationship: 'child',
+          first_name: 'Test',
+          last_name: 'Kisi',
+          phone,
+          sort_order: 1,
+        })
+        .returning('ec_id')
+        .executeTakeFirstOrThrow();
+      return row.ec_id;
+    }
+
+    it('onboarding is unaffected: a patient with no family adds a contact immediately', async () => {
+      const patient = await makePatient();
+      const res = await emergencyContacts.create(patient.user_id, patient.user_id, {
+        relationship: 'child',
+        first_name: 'Ilk',
+        last_name: 'Kisi',
+        phone: '+14165552001',
+      });
+      expect(res.executed).toBe(true);
+      expect(res.contact).not.toBeNull();
+    });
+
+    it('defers an add once an active family member exists', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      await seedActiveFamilyLink(patient.user_id, family.user_id);
+
+      const res = await emergencyContacts.create(patient.user_id, patient.user_id, {
+        relationship: 'child',
+        first_name: 'Bekleyen',
+        last_name: 'Kisi',
+        phone: '+14165552002',
+      });
+      expect(res.executed).toBe(false);
+      expect(res.approval_id).toBeTruthy();
+      // NOTHING has been written yet — the contact must not exist.
+      const rows = await ownerDb
+        .selectFrom('emergency_contacts')
+        .selectAll()
+        .where('patient_id', '=', patient.user_id)
+        .execute();
+      expect(rows).toHaveLength(0);
+    });
+
+    it('approval CARRIES OUT the deferred add (real side effect, via SECURITY DEFINER)', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      await seedActiveFamilyLink(patient.user_id, family.user_id);
+      const res = await emergencyContacts.create(patient.user_id, patient.user_id, {
+        relationship: 'child',
+        first_name: 'Onayli',
+        last_name: 'Kisi',
+        phone: '+14165552003',
+      });
+
+      await approvals.decide(res.approval_id as string, family.user_id, 'approved');
+
+      const rows = await ownerDb
+        .selectFrom('emergency_contacts')
+        .selectAll()
+        .where('patient_id', '=', patient.user_id)
+        .where('deleted_at', 'is', null)
+        .execute();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.first_name).toBe('Onayli');
+      expect(rows[0]?.sort_order).toBe(1);
+      expect(rows[0]?.phone_verified).toBe(false);
+    });
+
+    it('rejection leaves nothing behind', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      await seedActiveFamilyLink(patient.user_id, family.user_id);
+      const res = await emergencyContacts.create(patient.user_id, patient.user_id, {
+        relationship: 'child',
+        first_name: 'Reddedilen',
+        last_name: 'Kisi',
+        phone: '+14165552004',
+      });
+
+      await approvals.decide(res.approval_id as string, family.user_id, 'rejected');
+      const rows = await ownerDb.selectFrom('emergency_contacts').selectAll().execute();
+      expect(rows).toHaveLength(0);
+    });
+
+    it('defers a REMOVE and carries it out on approval', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      await seedActiveFamilyLink(patient.user_id, family.user_id);
+      const ecId = await ecFor(patient.user_id);
+
+      const res = await emergencyContacts.remove(ecId, patient.user_id);
+      expect(res.executed).toBe(false);
+      let row = await ownerDb.selectFrom('emergency_contacts').selectAll().where('ec_id', '=', ecId).executeTakeFirstOrThrow();
+      expect(row.deleted_at).toBeNull();
+
+      await approvals.decide(res.approval_id as string, family.user_id, 'approved');
+      row = await ownerDb.selectFrom('emergency_contacts').selectAll().where('ec_id', '=', ecId).executeTakeFirstOrThrow();
+      expect(row.deleted_at).not.toBeNull();
+      expect(row.sort_order).toBeNull();
+    });
+
+    it('an approved phone EDIT clears phone_verified (the old number is no longer proven)', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      await seedActiveFamilyLink(patient.user_id, family.user_id);
+      const ecId = await ecFor(patient.user_id, '+14165552005');
+      await ownerDb.updateTable('emergency_contacts').set({ phone_verified: true }).where('ec_id', '=', ecId).execute();
+
+      const res = await emergencyContacts.update(ecId, patient.user_id, { phone: '+14165552006' });
+      expect(res.executed).toBe(false);
+      await approvals.decide(res.approval_id as string, family.user_id, 'approved');
+
+      const row = await ownerDb.selectFrom('emergency_contacts').selectAll().where('ec_id', '=', ecId).executeTakeFirstOrThrow();
+      expect(row.phone).toBe('+14165552006');
+      expect(row.phone_verified).toBe(false);
+    });
+
+    it('SECURITY: the executors are reachable ONLY through an approval — a family member still cannot write an EC directly', async () => {
+      // The D12 Critical, re-asserted. Slice 3 gave family members EC write
+      // access through an over-broad RLS UPDATE policy; the deferred-execution
+      // feature is a second reason someone might reach for one. There is
+      // still no family UPDATE/DELETE policy on this table, and the
+      // SECURITY DEFINER executors authorize on the request's patient_id.
+      const patient = await makePatient();
+      const family = await makeFamily();
+      await seedActiveFamilyLink(patient.user_id, family.user_id);
+      const ecId = await ecFor(patient.user_id, '+14165552007');
+
+      const direct = await withRlsContext(appDb, { actingUserId: family.user_id }, (trx) =>
+        trx
+          .updateTable('emergency_contacts')
+          .set({ phone: '+19999999999' })
+          .where('ec_id', '=', ecId)
+          .executeTakeFirst(),
+      );
+      expect(Number(direct.numUpdatedRows)).toBe(0);
+
+      const softDelete = await withRlsContext(appDb, { actingUserId: family.user_id }, (trx) =>
+        trx.updateTable('emergency_contacts').set({ deleted_at: new Date() }).where('ec_id', '=', ecId).executeTakeFirst(),
+      );
+      expect(Number(softDelete.numUpdatedRows)).toBe(0);
+
+      const row = await ownerDb.selectFrom('emergency_contacts').selectAll().where('ec_id', '=', ecId).executeTakeFirstOrThrow();
+      expect(row.phone).toBe('+14165552007');
+      expect(row.deleted_at).toBeNull();
+    });
+
+    it('SECURITY: an approver cannot redirect the write to another patient by tampering with the payload', async () => {
+      // The executors take patient_id from `approval_requests.patient_id`,
+      // never from the payload — so even a payload rewritten in the DB cannot
+      // move the write to a different patient's contacts.
+      const patient = await makePatient();
+      const victim = await makePatient();
+      const family = await makeFamily();
+      await seedActiveFamilyLink(patient.user_id, family.user_id);
+      const res = await emergencyContacts.create(patient.user_id, patient.user_id, {
+        relationship: 'child',
+        first_name: 'Hedef',
+        last_name: 'Kisi',
+        phone: '+14165552008',
+      });
+
+      await ownerDb
+        .updateTable('approval_requests')
+        .set({ action_payload: { op: 'create', patient_id: victim.user_id, relationship: 'child', first_name: 'X', last_name: 'Y', phone: '+14165552009' } })
+        .where('approval_id', '=', res.approval_id as string)
+        .execute();
+
+      await approvals.decide(res.approval_id as string, family.user_id, 'approved');
+
+      const victimRows = await ownerDb
+        .selectFrom('emergency_contacts')
+        .selectAll()
+        .where('patient_id', '=', victim.user_id)
+        .execute();
+      expect(victimRows).toHaveLength(0);
+    });
+
+    it('two co-pending same-phone creates: the second approval is a safe no-op, not a 500 (Finding 2)', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      await seedActiveFamilyLink(patient.user_id, family.user_id);
+      const dupPhone = '+14165552100';
+
+      // Two separate pending creates for the SAME phone — both pass the
+      // request-time check because neither is inserted while pending.
+      const first = await emergencyContacts.create(patient.user_id, patient.user_id, {
+        relationship: 'child',
+        first_name: 'Bir',
+        last_name: 'Kisi',
+        phone: dupPhone,
+      });
+      const second = await emergencyContacts.create(patient.user_id, patient.user_id, {
+        relationship: 'sibling',
+        first_name: 'Iki',
+        last_name: 'Kisi',
+        phone: dupPhone,
+      });
+      expect(first.executed).toBe(false);
+      expect(second.executed).toBe(false);
+
+      await approvals.decide(first.approval_id as string, family.user_id, 'approved');
+      // The second approval must NOT throw (previously: partial-unique 500).
+      await expect(approvals.decide(second.approval_id as string, family.user_id, 'approved')).resolves.not.toThrow();
+
+      const rows = await ownerDb
+        .selectFrom('emergency_contacts')
+        .selectAll()
+        .where('patient_id', '=', patient.user_id)
+        .where('deleted_at', 'is', null)
+        .execute();
+      // Exactly one contact with that phone — the no-op didn't duplicate it.
+      expect(rows.filter((r) => r.phone === dupPhone)).toHaveLength(1);
     });
   });
 });

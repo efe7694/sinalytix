@@ -12,7 +12,9 @@ import type Redis from 'ioredis';
 import { REDIS } from '../common/redis.module';
 import { KYSELY } from '../common/db.module';
 import { ApiException } from '../common/api.exception';
-import { ApiErrorCode } from '@sinalytix/domain';
+import { ApiErrorCode, ApprovalActionType, RequestedByRole } from '@sinalytix/domain';
+import type { EmergencyContactMutationResult } from '@sinalytix/domain';
+import { ApprovalGateService } from '../approval-requests/approval-gate.service';
 import { randomOtpCode } from '../common/hash.util';
 
 const MAX_CONTACTS = 3;
@@ -78,10 +80,24 @@ function lockoutKey(ecId: string): string {
 export class EmergencyContactsService {
   constructor(
     @Inject(KYSELY) private readonly db: Kysely<Database>,
+    private readonly approvalGate: ApprovalGateService,
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
-  async create(patientId: string, actingUserId: string, body: CreateEmergencyContactRequest): Promise<EmergencyContactPublic> {
+  /**
+   * FAM-12 §3 gates "EC (Acil Kişi) değişikliği" — default ON. So this can
+   * return either the created contact or a pending approval; see
+   * `EmergencyContactMutationResult` for why that is a union.
+   *
+   * Onboarding is unaffected by construction: a patient adding their first
+   * contact has no family links yet, so the gate finds zero eligible
+   * approvers and runs the create immediately (K4 deadlock override).
+   */
+  async create(
+    patientId: string,
+    actingUserId: string,
+    body: CreateEmergencyContactRequest,
+  ): Promise<EmergencyContactMutationResult> {
     return withRlsContext(this.db, { actingUserId }, async (trx) => {
       const active = await trx
         .selectFrom('emergency_contacts')
@@ -112,20 +128,44 @@ export class EmergencyContactsService {
         throw ApiException.conflict('ec.phone_already_present');
       }
 
-      const row = await trx
-        .insertInto('emergency_contacts')
-        .values({
-          patient_id: patientId,
+      let created: EmergencyContactPublic | null = null;
+      const gate = await this.approvalGate.maybeGate(trx, {
+        patientId,
+        actionType: ApprovalActionType.EC_CHANGE,
+        // The payload carries the contact's details because the approver has
+        // to know WHAT they are approving ("add Ayşe, +1416…") — that is the
+        // decision, not an incidental leak. It stays inside `approval_requests`
+        // (patient + requester + active family only) and never reaches
+        // `AuditLogEntry.event_data`, which must stay PHI-free (Modül 2 §8).
+        actionPayload: {
+          op: 'create',
           relationship: body.relationship,
           first_name: body.first_name,
           last_name: body.last_name,
           phone: body.phone,
-          sort_order: nextSortOrder,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow();
+        },
+        requesterId: actingUserId,
+        requesterRole: RequestedByRole.PATIENT,
+        executeAction: async () => {
+          const row = await trx
+            .insertInto('emergency_contacts')
+            .values({
+              patient_id: patientId,
+              relationship: body.relationship,
+              first_name: body.first_name,
+              last_name: body.last_name,
+              phone: body.phone,
+              sort_order: nextSortOrder,
+            })
+            .returningAll()
+            .executeTakeFirstOrThrow();
+          created = toPublic(row);
+        },
+      });
 
-      return toPublic(row);
+      return gate.executed
+        ? { executed: true as const, contact: created, approval_id: null }
+        : { executed: false as const, contact: null, approval_id: gate.approval_id as string };
     });
   }
 
@@ -142,7 +182,20 @@ export class EmergencyContactsService {
     });
   }
 
-  async update(ecId: string, actingUserId: string, body: UpdateEmergencyContactRequest): Promise<EmergencyContactPublic> {
+  /**
+   * Gated like create/remove. FAM-12's description enumerates "ekleme veya
+   * çıkarma", but the row is labelled "EC (Acil Kişi) **değişikliği**" and the
+   * action type is literally `ec_change` — and an edit is the *most*
+   * dangerous variant of the three: swapping a phone number silently
+   * redirects the SOS chain to someone else while the contact's name still
+   * reads correctly. Gating add/remove but not edit would leave the widest
+   * hole open.
+   */
+  async update(
+    ecId: string,
+    actingUserId: string,
+    body: UpdateEmergencyContactRequest,
+  ): Promise<EmergencyContactMutationResult> {
     return withRlsContext(this.db, { actingUserId }, async (trx) => {
       const existing = await trx
         .selectFrom('emergency_contacts')
@@ -179,28 +232,49 @@ export class EmergencyContactsService {
           throw ApiException.conflict('ec.phone_already_present');
         }
       }
-      const row = await trx
-        .updateTable('emergency_contacts')
-        .set({
-          ...(body.relationship !== undefined ? { relationship: body.relationship } : {}),
-          ...(body.first_name !== undefined ? { first_name: body.first_name } : {}),
-          ...(body.last_name !== undefined ? { last_name: body.last_name } : {}),
-          ...(body.phone !== undefined ? { phone: body.phone } : {}),
-          // Changing phone invalidates any prior verification (Module 2 §3.3 inference).
-          ...(phoneChanged ? { phone_verified: false } : {}),
-        })
-        .where('ec_id', '=', ecId)
-        .returningAll()
-        .executeTakeFirst();
-      if (!row) {
-        throw ApiException.notFound();
-      }
-      return toPublic(row);
+      let updated: EmergencyContactPublic | null = null;
+      const gate = await this.approvalGate.maybeGate(trx, {
+        patientId: existing.patient_id,
+        actionType: ApprovalActionType.EC_CHANGE,
+        actionPayload: {
+          op: 'update',
+          ec_id: ecId,
+          relationship: body.relationship ?? null,
+          first_name: body.first_name ?? null,
+          last_name: body.last_name ?? null,
+          phone: body.phone ?? null,
+        },
+        requesterId: actingUserId,
+        requesterRole: RequestedByRole.PATIENT,
+        executeAction: async () => {
+          const row = await trx
+            .updateTable('emergency_contacts')
+            .set({
+              ...(body.relationship !== undefined ? { relationship: body.relationship } : {}),
+              ...(body.first_name !== undefined ? { first_name: body.first_name } : {}),
+              ...(body.last_name !== undefined ? { last_name: body.last_name } : {}),
+              ...(body.phone !== undefined ? { phone: body.phone } : {}),
+              // Changing phone invalidates any prior verification (Modül 2 §3.4 inference).
+              ...(phoneChanged ? { phone_verified: false } : {}),
+            })
+            .where('ec_id', '=', ecId)
+            .returningAll()
+            .executeTakeFirst();
+          if (!row) {
+            throw ApiException.notFound();
+          }
+          updated = toPublic(row);
+        },
+      });
+
+      return gate.executed
+        ? { executed: true as const, contact: updated, approval_id: null }
+        : { executed: false as const, contact: null, approval_id: gate.approval_id as string };
     });
   }
 
-  async remove(ecId: string, actingUserId: string): Promise<void> {
-    await withRlsContext(this.db, { actingUserId }, async (trx) => {
+  async remove(ecId: string, actingUserId: string): Promise<EmergencyContactMutationResult> {
+    return withRlsContext(this.db, { actingUserId }, async (trx) => {
       // Owner-only, independent of RLS (same reasoning as update() — a linked
       // family member can read this row, so RLS visibility alone must not
       // gate a soft-delete of the patient's safety-critical contact).
@@ -213,15 +287,28 @@ export class EmergencyContactsService {
       if (!existing || existing.patient_id !== actingUserId) {
         throw ApiException.notFound();
       }
-      await trx
-        .updateTable('emergency_contacts')
-        // sort_order: null frees the slot for the DEFERRABLE unique
-        // constraint (migration 0010) — NULLs never collide with each
-        // other or with an active row's concrete 1-3 value.
-        .set({ deleted_at: new Date(), sort_order: null })
-        .where('ec_id', '=', ecId)
-        .where('deleted_at', 'is', null)
-        .execute();
+      const gate = await this.approvalGate.maybeGate(trx, {
+        patientId: existing.patient_id,
+        actionType: ApprovalActionType.EC_CHANGE,
+        actionPayload: { op: 'remove', ec_id: ecId },
+        requesterId: actingUserId,
+        requesterRole: RequestedByRole.PATIENT,
+        executeAction: async () => {
+          await trx
+            .updateTable('emergency_contacts')
+            // sort_order: null frees the slot for the DEFERRABLE unique
+            // constraint (migration 0010) — NULLs never collide with each
+            // other or with an active row's concrete 1-3 value.
+            .set({ deleted_at: new Date(), sort_order: null })
+            .where('ec_id', '=', ecId)
+            .where('deleted_at', 'is', null)
+            .execute();
+        },
+      });
+
+      return gate.executed
+        ? { executed: true as const, contact: null, approval_id: null }
+        : { executed: false as const, contact: null, approval_id: gate.approval_id as string };
     });
   }
 
