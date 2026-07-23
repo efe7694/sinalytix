@@ -1,5 +1,5 @@
 /**
- * The registry (code default) and migration 0015's seed (DB default) are two
+ * The registry (code default) and the migration seeds (DB default) are two
  * copies of the same numbers, and the whole point of K10 is that services
  * read the DB one. If they drift, a service silently behaves differently
  * depending on whether its `system_config` row loaded — the worst kind of
@@ -7,7 +7,7 @@
  * against the registry, rather than asserting a hand-written duplicate.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -21,24 +21,33 @@ import {
 import { FEATURE_FLAG_KEYS, featureFlagDefault } from './feature-flags';
 import { SESSION_POLICY, sessionPolicyFor } from './session-policy';
 
-const MIGRATION = readFileSync(
-  path.resolve(__dirname, '../../db/migrations/0015_admin-context-and-system-config.js'),
-  'utf8',
-);
+const MIGRATIONS_DIR = path.resolve(__dirname, '../../db/migrations');
+
+/** Every migration, concatenated. Scanning the whole directory rather than
+ * one named file matters: a key seeded by a LATER migration (0018 added the
+ * rate-limit keys) would otherwise silently drop out of the drift check. */
+const MIGRATION = readdirSync(MIGRATIONS_DIR)
+  .filter((f) => f.endsWith('.js'))
+  .sort()
+  .map((f) => readFileSync(path.join(MIGRATIONS_DIR, f), 'utf8'))
+  .join('\n');
 
 /** Parses the `INSERT INTO system_config ... VALUES (...)` seed block into
  * {key: {value, requiresSecondApproval}}. Intentionally a dumb line-regex
  * over the real file: a fancier parser would be one more thing that can be
  * wrong in a way the test can't see. */
 function parseSeed(): Record<string, { value: unknown; requiresSecondApproval: boolean }> {
-  const block = MIGRATION.split('INSERT INTO system_config')[1] ?? '';
-  const rows = [...block.matchAll(/\(\s*'([\w.]+)'\s*,\s*'([^']+)'::jsonb\s*,\s*(true|false)\s*\)/g)];
+  // Several migrations may each carry an INSERT block; take them all.
+  const blocks = MIGRATION.split('INSERT INTO system_config').slice(1);
+  const rows = blocks.flatMap((block) => [
+    ...block.matchAll(/\(\s*'([\w.]+)'\s*,\s*'([^']+)'::jsonb\s*,\s*(true|false)\s*\)/g),
+  ]);
   return Object.fromEntries(
     rows.map((m) => [m[1] as string, { value: JSON.parse(m[2] as string), requiresSecondApproval: m[3] === 'true' }]),
   );
 }
 
-describe('SystemConfig registry ↔ migration 0015 seed', () => {
+describe('SystemConfig registry ↔ migration seeds', () => {
   const seed = parseSeed();
 
   it('parses a non-empty seed block (guards the regex itself)', () => {
@@ -107,7 +116,7 @@ describe('isSystemConfigKey', () => {
   });
 });
 
-describe('FeatureFlag registry ↔ migration 0015 seed', () => {
+describe('FeatureFlag registry ↔ migration seeds', () => {
   it('seeds every registry flag', () => {
     for (const key of FEATURE_FLAG_KEYS) {
       expect(MIGRATION).toContain(`'${key}'`);
