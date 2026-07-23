@@ -23,8 +23,8 @@ import { ProblemException } from '../common/problem.exception';
 import { randomToken } from '../common/hash.util';
 import { RedeemRateLimiter } from '../common/redeem-rate-limiter.service';
 import { ApprovalGateService } from '../approval-requests/approval-gate.service';
+import { SystemConfigService } from '../common/system-config.service';
 
-const CODE_TTL_SECONDS = 15 * 60; // legacy parity: caregiver code valid 15 minutes
 const REDEEM_NAMESPACE = 'caregiver-link';
 
 /** 6-char uppercase alphanumeric, legacy parity (caregiver_service.py). Omits
@@ -45,6 +45,7 @@ export class CaregiverLinksService {
     @Inject(KYSELY) private readonly db: Kysely<Database>,
     private readonly redeemRateLimiter: RedeemRateLimiter,
     private readonly approvalGate: ApprovalGateService,
+    private readonly systemConfig: SystemConfigService,
   ) {}
 
   // ── Patient side: generate / revoke a caregiver code ────────────────────
@@ -62,7 +63,7 @@ export class CaregiverLinksService {
 
       const code = randomCaregiverCode();
       const qrPayload = randomToken(24);
-      const expiresAt = new Date(Date.now() + CODE_TTL_SECONDS * 1000);
+      const expiresAt = new Date(Date.now() + (await this.systemConfig.getMs('link.code_ttl_min', 'min')));
       const row = await trx
         .insertInto('caregiver_links')
         .values({ patient_id: patientId, code, qr_payload: qrPayload, expires_at: expiresAt })

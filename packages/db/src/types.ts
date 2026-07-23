@@ -96,8 +96,31 @@ export interface CaregiverProfilesTable {
 
 export interface AdminUsersTable {
   user_id: string;
-  admin_role: string;
+  /** K10: multi-valued. Was a single `text` until migration 0015. */
+  admin_role: string[];
   created_at: GeneratedTimestamp;
+}
+
+/** K10 / Admin Panel PRD §6 (migration 0015). `value` is jsonb — the typed
+ * key registry lives in `@sinalytix/config`, not here. */
+export interface SystemConfigTable {
+  key: string;
+  value: unknown;
+  value_schema: ColumnType<unknown, unknown | undefined, unknown>;
+  requires_second_approval: ColumnType<boolean, boolean | undefined, boolean>;
+  updated_by: string | null;
+  updated_at: GeneratedTimestamp;
+}
+
+/** K10 / Admin Panel PRD §6 (migration 0015). */
+export interface FeatureFlagsTable {
+  key: string;
+  enabled: ColumnType<boolean, boolean | undefined, boolean>;
+  scope: ColumnType<string, string | undefined, string>;
+  scope_value: string | null;
+  app_context: GeneratedStringArray;
+  updated_by: string | null;
+  updated_at: GeneratedTimestamp;
 }
 
 export interface SessionsTable {
@@ -377,4 +400,6 @@ export interface Database {
   caregiver_links: CaregiverLinksTable;
   patient_approval_configs: PatientApprovalConfigsTable;
   approval_requests: ApprovalRequestsTable;
+  system_config: SystemConfigTable;
+  feature_flags: FeatureFlagsTable;
 }

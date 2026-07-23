@@ -17,8 +17,8 @@ import { ProblemException } from '../common/problem.exception';
 import { randomOtpCode, randomToken } from '../common/hash.util';
 import { RedeemRateLimiter } from '../common/redeem-rate-limiter.service';
 import { ConsentGrantsService } from '../consent-grants/consent-grants.service';
+import { SystemConfigService } from '../common/system-config.service';
 
-const CODE_TTL_SECONDS = 15 * 60; // matches the caregiver-link UI's existing "code valid for 15 minutes" copy
 const REDEEM_NAMESPACE = 'family-link';
 
 // A family member's default access on link activation — deliberately
@@ -62,6 +62,7 @@ export class FamilyLinksService {
     @Inject(KYSELY) private readonly db: Kysely<Database>,
     private readonly consentGrantsService: ConsentGrantsService,
     private readonly redeemRateLimiter: RedeemRateLimiter,
+    private readonly systemConfig: SystemConfigService,
   ) {}
 
   // ── Patient side: generate / revoke a connect code ──────────────────────
@@ -82,7 +83,7 @@ export class FamilyLinksService {
 
       const code = randomOtpCode();
       const qrPayload = randomToken(24);
-      const expiresAt = new Date(Date.now() + CODE_TTL_SECONDS * 1000);
+      const expiresAt = new Date(Date.now() + (await this.systemConfig.getMs('link.code_ttl_min', 'min')));
       const row = await trx
         .insertInto('family_link_codes')
         .values({
@@ -160,7 +161,7 @@ export class FamilyLinksService {
 
       const code = randomOtpCode();
       const qrPayload = randomToken(24);
-      const expiresAt = new Date(Date.now() + CODE_TTL_SECONDS * 1000);
+      const expiresAt = new Date(Date.now() + (await this.systemConfig.getMs('link.code_ttl_min', 'min')));
       const row = await trx
         .insertInto('family_link_codes')
         .values({

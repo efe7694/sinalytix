@@ -47,13 +47,28 @@ export type Locale = (typeof Locale)[keyof typeof Locale];
 
 // ── Session / App context (Dictionary §1, Module 2 §1.2) ─
 
+/** K9 added `admin` as the FIFTH surface. An admin session is never shared
+ * with another app (no SSO) and carries its own, much tighter session policy
+ * — see `SESSION_POLICY` in @sinalytix/config. */
 export const AppContext = {
   PATIENT: 'patient',
   FAMILY: 'family',
   CAREGIVER: 'caregiver',
   HCP: 'hcp',
+  ADMIN: 'admin',
 } as const;
 export type AppContext = (typeof AppContext)[keyof typeof AppContext];
+
+/** Admin roles (K10) — multi-valued on `AdminUser.admin_role`. Admin Panel
+ * PRD §1: least-privilege, four roles + one super role. */
+export const AdminRole = {
+  SUPPORT: 'support',
+  CREDENTIALING: 'credentialing',
+  COMPLIANCE: 'compliance',
+  OPS: 'ops',
+  SUPERADMIN: 'superadmin',
+} as const;
+export type AdminRole = (typeof AdminRole)[keyof typeof AdminRole];
 
 export const Platform = {
   MOBILE_IOS: 'mobile_ios',
