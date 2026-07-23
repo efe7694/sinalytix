@@ -537,5 +537,42 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
         .execute();
       expect(victimRows).toHaveLength(0);
     });
+
+    it('two co-pending same-phone creates: the second approval is a safe no-op, not a 500 (Finding 2)', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      await seedActiveFamilyLink(patient.user_id, family.user_id);
+      const dupPhone = '+14165552100';
+
+      // Two separate pending creates for the SAME phone — both pass the
+      // request-time check because neither is inserted while pending.
+      const first = await emergencyContacts.create(patient.user_id, patient.user_id, {
+        relationship: 'child',
+        first_name: 'Bir',
+        last_name: 'Kisi',
+        phone: dupPhone,
+      });
+      const second = await emergencyContacts.create(patient.user_id, patient.user_id, {
+        relationship: 'sibling',
+        first_name: 'Iki',
+        last_name: 'Kisi',
+        phone: dupPhone,
+      });
+      expect(first.executed).toBe(false);
+      expect(second.executed).toBe(false);
+
+      await approvals.decide(first.approval_id as string, family.user_id, 'approved');
+      // The second approval must NOT throw (previously: partial-unique 500).
+      await expect(approvals.decide(second.approval_id as string, family.user_id, 'approved')).resolves.not.toThrow();
+
+      const rows = await ownerDb
+        .selectFrom('emergency_contacts')
+        .selectAll()
+        .where('patient_id', '=', patient.user_id)
+        .where('deleted_at', 'is', null)
+        .execute();
+      // Exactly one contact with that phone — the no-op didn't duplicate it.
+      expect(rows.filter((r) => r.phone === dupPhone)).toHaveLength(1);
+    });
   });
 });
