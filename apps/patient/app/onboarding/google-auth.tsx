@@ -4,9 +4,10 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { useAuthStore } from '@/store/auth';
-import { useOnboardingStore } from '@/store/onboarding';
+import { useOnboardingStore, TOS_VERSION } from '@/store/onboarding';
 import { BASE_URL, ApiError } from '@/lib/api';
 import { COLORS, FONT_SIZE, SPACING } from '@sinalytix/ui';
+import { submitConsentRecord } from '@/lib/consent';
 
 // TODO(before-launch): Google OAuth env vars gerekiyor.
 // Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs
@@ -98,6 +99,16 @@ export default function GoogleAuthScreen() {
   }
 
   async function submitDraft(accessToken: string) {
+    // Consent first, on its own call — it is the immutable legal record and
+    // must land before any clinical data (Modül 1 §13). Best-effort like the
+    // rest of the draft submit: onboarding is not blocked on it, and the
+    // record can be re-submitted.
+    try {
+      await submitConsentRecord(accessToken, draft.consent, TOS_VERSION);
+    } catch {
+      // Non-fatal — see above.
+    }
+
     await fetch(`${BASE_URL}/api/v1/auth/complete-onboarding`, {
       method: 'POST',
       headers: {

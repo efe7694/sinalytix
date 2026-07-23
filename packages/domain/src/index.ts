@@ -11,6 +11,7 @@ export * from './enums';
 export * from './errors';
 export * from './user';
 export * from './consent';
+export * from './consent-effective';
 export * from './consent-grant';
 export * from './emergency-contact';
 export * from './family-link';

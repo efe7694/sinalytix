@@ -11,6 +11,7 @@ import {
   type CreateSdmDeclarationRequest,
   type PaginatedResponse,
   type SdmDeclarationPublic,
+  GRANT_ENFORCEMENT_V0,
 } from '@sinalytix/domain';
 import { isLockboxCategory } from '@sinalytix/policy-engine';
 import { KYSELY } from '../common/db.module';
@@ -31,6 +32,11 @@ function toConsentGrantPublic(row: {
   created_at: Date;
 }): ConsentGrantPublic {
   return {
+    // Modül 2 §3.2 V0 note: the client is told, on every grant, that V0
+    // enforcement is declarative — RLS + link tables + DTO filtering, not the
+    // full PolicyEngine (V1). Stating it beats letting a client assume the
+    // stronger guarantee.
+    enforcement: GRANT_ENFORCEMENT_V0,
     grant_id: row.grant_id,
     patient_id: row.patient_id,
     granted_to_kind: row.granted_to_kind as ConsentGrantPublic['granted_to_kind'],

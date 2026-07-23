@@ -60,6 +60,10 @@ export const ApiErrorCode = {
   /** EXT, but named by Admin PRD §7/4: a `FeatureFlag` kill switch is
    * engaged (e.g. `ai.kill_switch` → every `/ai/*` endpoint 503s). */
   FEATURE_DISABLED: 'FEATURE_DISABLED',
+  /** EXT — the resource exists but the verb is impossible by design, e.g.
+   * PATCH/DELETE on append-only `/consents` (Modül 2 §3.2 spells out 405).
+   * A 404 here would read like a wrong URL; 405 says "this can never work". */
+  METHOD_NOT_ALLOWED: 'METHOD_NOT_ALLOWED',
   /** EXT — unexpected server-side failure. The message is always generic;
    * the detail is logged server-side against `request_id`. */
   INTERNAL: 'INTERNAL',
@@ -89,6 +93,7 @@ export const API_ERROR_STATUS: Record<ApiErrorCode, number> = {
   IDEMPOTENCY_KEY_REUSE: 409,
   RATE_LIMITED: 429,
   BAD_REQUEST: 400,
+  METHOD_NOT_ALLOWED: 405,
   FEATURE_DISABLED: 503,
   INTERNAL: 500,
 };

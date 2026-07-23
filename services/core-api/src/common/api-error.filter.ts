@@ -88,6 +88,10 @@ function mapStatusToCode(status: number): { code: ApiErrorCode; messageKey: Erro
       return { code: ApiErrorCode.PERMISSION_DENIED, messageKey: 'error.permission_denied' };
     case 404:
       return { code: ApiErrorCode.NOT_FOUND, messageKey: 'error.not_found' };
+    case 405:
+      // A framework MethodNotAllowedException would otherwise emit HTTP 405
+      // with code INTERNAL — a status/code mismatch (independent review S2-1).
+      return { code: ApiErrorCode.METHOD_NOT_ALLOWED, messageKey: 'error.bad_request' };
     case 409:
       return { code: ApiErrorCode.CONFLICT, messageKey: 'error.bad_request' };
     case 422:
