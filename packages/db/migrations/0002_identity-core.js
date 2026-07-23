@@ -1,6 +1,6 @@
 /**
  * Faz 0 — User, Organization, PractitionerRole, *Profile extensions, AdminUser.
- * Column names copied verbatim from Sinalytix_Canonical_Data_Dictionary__R2.md §1.
+ * Column names copied verbatim from docs/spec/Sinalytix_Canonical_Data_Dictionary.md (v0.2) §1.
  *
  * Cross-app visibility of profile extensions via ConsentGrant (family/caregiver
  * viewing a patient's profile) is Faz 1 scope — for now, every profile table is
