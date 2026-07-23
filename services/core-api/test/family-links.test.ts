@@ -415,4 +415,138 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
       expect(links[0].permission_level).toBe('view');
     });
   });
+
+  describe("updatePermission() — FAM-13 + K6 (D15 item B3)", () => {
+    // This endpoint did not exist before Faz 1.5 Slice 4, which meant K6 had
+    // no server-side enforcement point anywhere in the codebase.
+    async function activeLink(patientId: string, familyId: string): Promise<string> {
+      const row = await ownerDb
+        .insertInto('patient_family_links')
+        .values({
+          patient_id: patientId,
+          family_user_id: familyId,
+          relationship: 'child',
+          status: 'active',
+          source: 'code',
+          linked_at: new Date(),
+        })
+        .returning('link_id')
+        .executeTakeFirstOrThrow();
+      return row.link_id;
+    }
+
+    async function declareSdm(patientId: string, sdmUserId: string, active = true): Promise<void> {
+      await ownerDb
+        .insertInto('sdm_declarations')
+        .values({ patient_id: patientId, sdm_user_id: sdmUserId, province_rule: 'ON_HCCA', active })
+        .execute();
+    }
+
+    it('lets the patient raise a family member to `edit`', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      const linkId = await activeLink(patient.user_id, family.user_id);
+
+      const updated = await service.updatePermission(linkId, patient.user_id, 'patient', 'edit');
+      expect(updated.permission_level).toBe('edit');
+    });
+
+    it('K6: refuses `full` when there is no active SDM declaration', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      const linkId = await activeLink(patient.user_id, family.user_id);
+
+      await expect(service.updatePermission(linkId, patient.user_id, 'patient', 'full')).rejects.toMatchObject({
+        code: 'PERMISSION_DENIED',
+      });
+      // And the stored level is untouched — a refused write must not leave a
+      // partially applied state.
+      const row = await ownerDb
+        .selectFrom('patient_family_links')
+        .select('permission_level')
+        .where('link_id', '=', linkId)
+        .executeTakeFirstOrThrow();
+      expect(row.permission_level).toBe('view');
+    });
+
+    it('K6: refuses `full` when the SDM declaration exists but is INACTIVE', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      await declareSdm(patient.user_id, family.user_id, false);
+      const linkId = await activeLink(patient.user_id, family.user_id);
+
+      await expect(service.updatePermission(linkId, patient.user_id, 'patient', 'full')).rejects.toMatchObject({
+        code: 'PERMISSION_DENIED',
+      });
+    });
+
+    it('K6: refuses `full` when the active SDM declaration names a DIFFERENT person', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      const otherSdm = await makeFamily();
+      await declareSdm(patient.user_id, otherSdm.user_id, true);
+      const linkId = await activeLink(patient.user_id, family.user_id);
+
+      await expect(service.updatePermission(linkId, patient.user_id, 'patient', 'full')).rejects.toMatchObject({
+        code: 'PERMISSION_DENIED',
+      });
+    });
+
+    it('K6: allows `full` for the declared, active SDM', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      await declareSdm(patient.user_id, family.user_id, true);
+      const linkId = await activeLink(patient.user_id, family.user_id);
+
+      const updated = await service.updatePermission(linkId, patient.user_id, 'patient', 'full');
+      expect(updated.permission_level).toBe('full');
+    });
+
+    it('FAM-13: refuses the change from any app context other than the patient app', async () => {
+      // Not merely "the patient must do it" — the CONTEXT matters, because
+      // one User row can hold several roles (Sözlük §1), so a family app
+      // session must never be able to raise its own access.
+      const patient = await makePatient();
+      const family = await makeFamily();
+      const linkId = await activeLink(patient.user_id, family.user_id);
+
+      for (const ctx of ['family', 'caregiver', 'hcp', 'admin']) {
+        await expect(service.updatePermission(linkId, patient.user_id, ctx, 'edit')).rejects.toMatchObject({
+          code: 'PERMISSION_DENIED',
+        });
+      }
+    });
+
+    it('a family member cannot raise their own permission (404, entity-non-leaking)', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      const linkId = await activeLink(patient.user_id, family.user_id);
+
+      // 404 rather than 403: the family member CAN read this row, so a 403
+      // would confirm which link id belongs to them (Modül 1 §11).
+      await expect(service.updatePermission(linkId, family.user_id, 'patient', 'edit')).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+    });
+
+    it('refuses to change the level of a link that is not active', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      const row = await ownerDb
+        .insertInto('patient_family_links')
+        .values({
+          patient_id: patient.user_id,
+          family_user_id: family.user_id,
+          relationship: 'child',
+          status: 'pending_patient_confirm',
+          source: 'code',
+        })
+        .returning('link_id')
+        .executeTakeFirstOrThrow();
+
+      await expect(service.updatePermission(row.link_id, patient.user_id, 'patient', 'edit')).rejects.toMatchObject({
+        code: 'CONFLICT',
+      });
+    });
+  });
 });

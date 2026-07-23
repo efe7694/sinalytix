@@ -292,6 +292,78 @@ export class FamilyLinksService {
     });
   }
 
+  /**
+   * `PATCH /family-links/{id}` — change a family member's permission level.
+   * Modül 2 §3.4 + FAM-13, and the enforcement point for **K6**.
+   *
+   * This endpoint did not exist at all before Faz 1.5 Slice 4 (D15 item B3),
+   * which meant K6 — "`permission_level=full` yalnız `SDMDeclaration.active=true`
+   * üyeye atanabilir; aksi halde max `edit`" — had no server-side enforcement
+   * anywhere. It produced no live violation only because the accept path
+   * always writes `view` and nothing could change it; the rule was simply
+   * absent, waiting for the first endpoint that would need it.
+   *
+   * Three gates, each a distinct failure:
+   *  - **Patient app only** (FAM-13). Not merely "the patient" — the
+   *    `app_context` matters, because a family member's own app must not be
+   *    able to raise its own access even if that user were somehow also the
+   *    patient (multi-role accounts are explicitly possible, Sözlük §1).
+   *  - **Patient owns the link.** Non-owner → 404, not 403: a family member
+   *    can read this row, so a 403 would confirm the link's existence to
+   *    someone who may not act on it (entity-non-leaking, Modül 1 §11).
+   *  - **K6.** `full` requires an ACTIVE `SDMDeclaration` naming this family
+   *    member for this patient. `full` is the level that carries substitute
+   *    decision-making weight (it is what the approval queue treats as an
+   *    authorized decider), so granting it to someone with no legal SDM
+   *    declaration would hand out a PHIPA-significant role through a UI
+   *    toggle.
+   */
+  async updatePermission(
+    linkId: string,
+    actingUserId: string,
+    appContext: string,
+    permissionLevel: LinkPermissionLevel,
+  ): Promise<PatientFamilyLinkPublic> {
+    if (appContext !== 'patient') {
+      throw ApiException.permissionDenied('link.permission_patient_app_only');
+    }
+
+    return withRlsContext(this.db, { actingUserId, appContext }, async (trx) => {
+      const link = await trx
+        .selectFrom('patient_family_links')
+        .selectAll()
+        .where('link_id', '=', linkId)
+        .executeTakeFirst();
+      if (!link || link.patient_id !== actingUserId) {
+        throw ApiException.notFound();
+      }
+      if (link.status !== FamilyLinkStatus.ACTIVE) {
+        throw ApiException.conflict('link.permission_link_not_active');
+      }
+
+      if (permissionLevel === LinkPermissionLevel.FULL) {
+        const sdm = await trx
+          .selectFrom('sdm_declarations')
+          .select('sdm_declaration_id')
+          .where('patient_id', '=', actingUserId)
+          .where('sdm_user_id', '=', link.family_user_id)
+          .where('active', '=', true)
+          .executeTakeFirst();
+        if (!sdm) {
+          throw ApiException.permissionDenied('link.permission_full_requires_sdm');
+        }
+      }
+
+      const updated = await trx
+        .updateTable('patient_family_links')
+        .set({ permission_level: permissionLevel })
+        .where('link_id', '=', linkId)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      return toLinkPublic(updated);
+    });
+  }
+
   /** Patient-initiated: activates a `pending_patient_confirm` link (the
    * code/qr path) — the atomic activate+grant step ec_invite gets for
    * free at redeem time. */

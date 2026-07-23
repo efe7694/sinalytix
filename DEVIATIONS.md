@@ -240,3 +240,24 @@ Spec §1.3 kod listesini "alt-küme" diye veriyor; eksik kalanlar EXT olarak iş
 **B5 — `enforcement: "declarative_v0"`** artık her grant DTO'sunda. Modül 2 §3.2 bu farkın istemciye **açıkça bildirilmesini** şart koşuyor. Boolean değil literal: tam motor gelince değer `"enforced_v1"` olacak ve buna dallanan istemci sessizce eski semantiği varsaymak yerine gürültüyle kırılacak.
 
 **Ön yüz (kullanıcının "her slice gerçek ön yüzle eşleşsin" kuralı):** Patient app'in onboarding onam draft'ı yalnız legacy `complete-onboarding`'e gidiyordu — EC ve health seed ile aynı best-effort çağrıda. İki bakımdan yanlış yer: `ConsentRecord` PIPEDA'nın istediği değiştirilemez artefakt, ve **herhangi bir klinik veriden ÖNCE** yazılmalı (Modül 1 §13). Artık auth'tan hemen sonra kendi çağrısıyla core-api'ye gidiyor (üç giriş yolunun üçünde de: OTP, Apple, Google); legacy çağrı EC + health seed'i kendi slice'larına kadar taşımaya devam ediyor (D9 çift-istemci deseni). `TOS_VERSION` tek sabit — kaydedilen sürüm kullanıcının okuduğu ekranla uyuşmazlık yapamaz.
+
+### D15.4 — Slice 4 (K6 + FAM-12 hizalaması)
+
+**B3 — `PATCH /family-links/{id}` hiç yoktu, dolayısıyla K6'nın sunucuda hiçbir uygulama noktası yoktu.** Canlı bir ihlal üretmiyordu çünkü kabul akışı `permission_level`'ı her zaman `view` yazıyor ve değiştirecek bir yol yok; kural sadece **yoktu**, onu gerektirecek ilk ucu bekliyordu. Uç üç ayrı kapıyla eklendi:
+- **Yalnız Patient app** (FAM-13). "Yalnız hasta" değil — `app_context` önemli, çünkü tek bir `User` satırı birden çok rol taşıyabilir (Sözlük §1); aile uygulamasındaki bir oturum kendi erişimini yükseltebilmemeli.
+- **Hasta link sahibi.** Sahip değilse **404, 403 değil**: aile üyesi bu satırı okuyabiliyor, dolayısıyla 403 hangi link id'sinin ona ait olduğunu doğrulardı (varlık-sızdırmazlık, Modül 1 §11).
+- **K6.** `full` için bu hasta–aile üyesi çifti adına **aktif** `SDMDeclaration` şart. `full`, vekil karar verici ağırlığı taşıyan düzey (onay kuyruğunun yetkili karar verici saydığı şey) — beyansız verilmesi PHIPA açısından anlamlı bir rolü UI toggle'ı ile dağıtmak olurdu. Testler dört reddi ayrı ayrı tutuyor: beyan yok / beyan pasif / beyan **başkasını** gösteriyor / yanlış app_context.
+
+**A5 — aksiyon tipleri FAM-12 §3 + Modül 1 §9'a hizalandı.** `family_link_permission_change` **iki kaynakta da yok**; D14 zaten "ürün semantiği belirlenmemiş, trigger ucu yok" diye işaretlemişti — uydurmaydı, o yüzden ona uç yazmak yerine kaldırıldı. Yerine spec'in dördü: `caregiver_link_change`, `ec_change`, `profile_edit`, `account_delete`.
+
+**FAM-12'yi okurken çıkan iki gerçek davranış sapması (ikisi de düzeltildi):**
+
+1. **Varsayılan terstiydi.** Migration 0014'ün `approval_config_requires_approval` fonksiyonu yapılandırılmamış aksiyon için `false` dönüyordu. FAM-12 §3 tablosu iki güvenlik-ilgili tip için tam tersini söylüyor: **"Varsayılan: Onay gerekli"**, hasta kapatana kadar (K4 toggle'ı hastanın). "Gated değil" varsayılanı, ayarı hiç açmamış her hasta için — yani nüfusun tamamı, çünkü onları oraya yönlendiren hiçbir şey yok — aile güvenlik ağını sessizce kapatıyordu. Varsayılan artık tipe göre (`caregiver_link_change`, `ec_change` → true).
+
+2. **Kapı yanlış yönü tutuyordu.** Slice 5 yalnız **bakıcı-tetikli** unlink'i kapıya alıyor, hastanın kendi unlink'ini serbest bırakıyordu. FAM-12 §3 açıkça hasta-tetikli hâli adlandırıyor ("Hasta … mevcut bakıcıyı çıkarıyor") — demans senaryosunda aile güvenlik ağının **bütün amacı** bu. Artık iki yön de kapıdan geçiyor.
+
+**Hastanın kilitlenmesi hâlâ imkânsız:** uygun `edit`/`full` aile onaylayıcısı yoksa kapı aksiyonu hemen çalıştırıp `auto_approved_no_approver` yazıyor (K4 deadlock override; PHIPA: kapasiteli hastanın kararı gözetilebilir, kalıcı olarak engellenemez), ve hasta kapıyı kendi ayarından tamamen kapatabiliyor. İkisi de ayrı testle tutuluyor.
+
+**Onay açıklamaları i18n'e taşındı.** `describe()` DTO'ya gömülü Türkçe cümleler üretiyordu; sunucu-taraflı tek mapper doğru karardı (D14) ama Fransızca bir aile üyesi, **yanlış anlamanın en pahalı olduğu ekranda** (SOS zincirinin aradığı numaranın değiştirilmesini onaylamak) Türkçe okuyordu. Artık `Accept-Language` ile çözülüyor.
+
+**Sonraki slice'a bilinçli ayrıldı — 4b: `ec_change` kapısının bağlanması.** Enum ve varsayılan hazır, ama EC ekleme/çıkarma'yı kapıya almak yanıt şeklini değiştiriyor (`create` artık "kişi" yerine "aile onayı bekliyor" da dönebilir) ve Patient app'te karşılık gelen bir bekleme durumu UI'ı gerekiyor. Bu slice zaten migration + enum + iki davranış düzeltmesi + yeni uç taşıyor; ikisini birleştirmek incelenemez bir PR yapardı.

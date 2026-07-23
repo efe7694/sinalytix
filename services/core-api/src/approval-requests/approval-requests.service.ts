@@ -11,19 +11,8 @@ import {
 } from '@sinalytix/domain';
 import { KYSELY } from '../common/db.module';
 import { ApiException } from '../common/api.exception';
-
-/** Human-readable descriptions for the family approvals screen, computed from
- * action_type + payload so the 3 apps don't each reimplement a mapper. */
-function describe(actionType: string, requestedByName: string): string {
-  switch (actionType) {
-    case ApprovalActionType.CAREGIVER_LINK_CHANGE:
-      return `${requestedByName} bakıcı bağlantısını sonlandırmak istiyor.`;
-    case ApprovalActionType.FAMILY_LINK_PERMISSION_CHANGE:
-      return `${requestedByName} erişim düzeyini değiştirmek istiyor.`;
-    default:
-      return 'Onay bekleyen bir işlem.';
-  }
-}
+import { describeApprovalAction } from '@sinalytix/i18n';
+import type { Locale } from '@sinalytix/i18n';
 
 @Injectable()
 export class ApprovalRequestsService {
@@ -76,7 +65,7 @@ export class ApprovalRequestsService {
   /** Requests for a patient, visible to the patient and their active family
    * members (RLS `approval_requests_select`). The family approvals screen
    * passes the patientId it has selected from its roster. */
-  async listForPatient(patientId: string, actingUserId: string): Promise<ApprovalRequestPublic[]> {
+  async listForPatient(patientId: string, actingUserId: string, locale: Locale = 'en'): Promise<ApprovalRequestPublic[]> {
     return withRlsContext(this.db, { actingUserId }, async (trx) => {
       // requested_by_name is denormalized on the row (snapshot at creation),
       // so no cross-actor profile join is needed here — the approver couldn't
@@ -95,7 +84,7 @@ export class ApprovalRequestsService {
         requested_by: r.requested_by,
         requested_by_role: r.requested_by_role as ApprovalRequestPublic['requested_by_role'],
         requested_by_name: r.requested_by_name,
-        description: describe(r.action_type, r.requested_by_name),
+        description: describeApprovalAction(r.action_type, r.requested_by_name, locale),
         created_at: r.created_at.toISOString(),
         expires_at: r.expires_at.toISOString(),
       }));

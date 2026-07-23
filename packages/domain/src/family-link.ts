@@ -36,6 +36,18 @@ export type RedeemFamilyLinkRequest = z.infer<typeof RedeemFamilyLinkRequestSche
 
 // ── PatientFamilyLink (both sides read this) ────────────────────────────
 
+/**
+ * `PATCH /family-links/{id}` — Modül 2 §3.4 (FAM-13). Deliberately a single
+ * field: this endpoint exists to change the permission level and nothing
+ * else, so a caller can never sneak `status` or `family_user_id` past it.
+ */
+export const UpdateFamilyLinkPermissionRequestSchema = z
+  .object({
+    permission_level: z.nativeEnum(LinkPermissionLevel),
+  })
+  .strict();
+export type UpdateFamilyLinkPermissionRequest = z.infer<typeof UpdateFamilyLinkPermissionRequestSchema>;
+
 export const PatientFamilyLinkPublicSchema = z.object({
   link_id: z.string().uuid(),
   patient_id: z.string().uuid(),

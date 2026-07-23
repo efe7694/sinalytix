@@ -14,3 +14,4 @@
 
 export * from './locale';
 export * from './error-messages';
+export * from './approval-descriptions';

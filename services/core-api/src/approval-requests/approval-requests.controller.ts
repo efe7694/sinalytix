@@ -1,4 +1,6 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Req, UseGuards, UseInterceptors } from '@nestjs/common';
+import type { FastifyRequest } from 'fastify';
+import { resolveLocale } from '@sinalytix/i18n';
 import type { ApprovalRequestPublic, PatientApprovalConfigPublic } from '@sinalytix/domain';
 import { AuthContextGuard } from '../common/auth-context.guard';
 import { CurrentAuth } from '../common/current-auth.decorator';
@@ -31,8 +33,19 @@ export class ApprovalRequestsController {
   }
 
   @Get('patients/:patientId/approvals')
-  async list(@Param('patientId') patientId: string, @CurrentAuth() auth: AuthContext): Promise<ApprovalRequestPublic[]> {
-    return this.approvalRequestsService.listForPatient(patientId, auth.userId);
+  async list(
+    @Param('patientId') patientId: string,
+    @CurrentAuth() auth: AuthContext,
+    @Req() req: FastifyRequest,
+  ): Promise<ApprovalRequestPublic[]> {
+    // `description` is rendered server-side (one mapper for three apps, D14),
+    // so the locale has to come from the request — otherwise a French family
+    // member reads Turkish on the screen where misreading costs the most.
+    return this.approvalRequestsService.listForPatient(
+      patientId,
+      auth.userId,
+      resolveLocale(req.headers['accept-language']),
+    );
   }
 
   @Post('approvals/:approvalId/approve')
