@@ -121,6 +121,11 @@ export const ERROR_MESSAGES = {
     fr: 'Un jeton de connexion Apple ou Google est requis.',
     tr: 'Apple veya Google giriş jetonu zorunlu.',
   },
+  'auth.self_service_context_only': {
+    en: 'This sign-in method is not available for this app.',
+    fr: "Cette méthode de connexion n'est pas disponible pour cette application.",
+    tr: 'Bu uygulama için bu giriş yöntemi kullanılamaz.',
+  },
   'auth.use_otp_endpoints': {
     en: 'Phone sign-in uses the code request and verify steps.',
     fr: 'La connexion par téléphone passe par la demande puis la vérification du code.',
