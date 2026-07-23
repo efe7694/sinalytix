@@ -1,4 +1,4 @@
-import { CallHandler, ExecutionContext, Inject, Injectable, NestInterceptor } from '@nestjs/common';
+import { CallHandler, ExecutionContext, Inject, Injectable, Logger, NestInterceptor } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import type Redis from 'ioredis';
 import { Observable, from, switchMap } from 'rxjs';
@@ -46,10 +46,9 @@ import { sha256Hex } from './hash.util';
  */
 @Injectable()
 export class RateLimitInterceptor implements NestInterceptor {
-  /** §1.5 — never rate limited. Prefix-matched against the path after the
-   * `/v1` global prefix. */
-  private static readonly EXEMPT_PREFIXES = ['/sos-events', '/call-attempts'];
   private static readonly WINDOW_SECONDS = 60;
+
+  private readonly logger = new Logger(RateLimitInterceptor.name);
 
   constructor(
     @Inject(REDIS) private readonly redis: Redis,
@@ -60,7 +59,7 @@ export class RateLimitInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     const path = stripVersionPrefix(request.url);
 
-    if (RateLimitInterceptor.EXEMPT_PREFIXES.some((p) => path.startsWith(p))) {
+    if (isRateLimitExempt(path)) {
       return next.handle();
     }
 
@@ -74,10 +73,24 @@ export class RateLimitInterceptor implements NestInterceptor {
     const window = Math.floor(Date.now() / 1000 / RateLimitInterceptor.WINDOW_SECONDS);
     const key = `ratelimit:${bucket}:${subject}:${window}`;
 
-    const count = await this.redis.incr(key);
-    if (count === 1) {
-      await this.redis.expire(key, RateLimitInterceptor.WINDOW_SECONDS);
+    let count: number;
+    try {
+      count = await this.redis.incr(key);
+      if (count === 1) {
+        await this.redis.expire(key, RateLimitInterceptor.WINDOW_SECONDS);
+      }
+    } catch (err) {
+      // FAIL OPEN. A rate limiter is an abuse guard, not a correctness
+      // mechanism — if Redis is unreachable, letting requests through is far
+      // less harmful than 500-ing the entire non-SOS API (including pure DB
+      // reads like GET /me that don't otherwise touch Redis) over a cache
+      // blip. Independent review, Reviewer D Medium. Logged, not swallowed
+      // silently, so an outage is visible in metrics. (SOS is already exempt
+      // before this method is reached, so its safety never depended on Redis.)
+      this.logger.error(`rate-limit Redis error; failing open for ${bucket}. ${String(err)}`);
+      return;
     }
+
     if (count > limit) {
       // Retry-After is the time left in THIS window, not a flat 60 — telling a
       // client to wait a full minute when the window resets in 3 seconds turns
@@ -108,6 +121,15 @@ const LIMIT_KEY = {
   auth: 'ratelimit.auth_per_min',
 } as const;
 
+/** §1.5 — never rate limited (checked before any Redis call). Exported so the
+ * test asserts the REAL exemption logic, not a reimplementation that could
+ * drift from it. */
+export const RATE_LIMIT_EXEMPT_PREFIXES = ['/sos-events', '/call-attempts'] as const;
+
+export function isRateLimitExempt(pathAfterVersion: string): boolean {
+  return RATE_LIMIT_EXEMPT_PREFIXES.some((p) => matchesSegment(pathAfterVersion, p));
+}
+
 function stripVersionPrefix(url: string): string {
   const path = url.split('?')[0] ?? '';
   return path.startsWith('/v1') ? path.slice(3) : path;
@@ -117,6 +139,14 @@ function stripVersionPrefix(url: string): string {
  * those endpoints are where credential-guessing happens, and because they are
  * the ones an unauthenticated caller can reach at all. */
 function classify(path: string, method: string): Bucket {
-  if (path.startsWith('/auth')) return 'auth';
+  if (matchesSegment(path, '/auth')) return 'auth';
   return method === 'GET' || method === 'HEAD' ? 'read' : 'write';
+}
+
+/** Prefix match on a whole path SEGMENT, so `/sos-events` matches
+ * `/sos-events` and `/sos-events/{id}/advance` but NOT a hypothetical sibling
+ * like `/sos-events-summary` (a bare startsWith would wrongly exempt it, or
+ * wrongly bucket `/authors` as auth). */
+function matchesSegment(path: string, prefix: string): boolean {
+  return path === prefix || path.startsWith(`${prefix}/`);
 }

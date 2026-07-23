@@ -15,7 +15,8 @@ import type { Pool } from 'pg';
 import Redis from 'ioredis';
 import { AppModule } from '../src/app.module';
 import { ApiErrorFilter } from '../src/common/api-error.filter';
-import { RateLimitInterceptor } from '../src/common/rate-limit.interceptor';
+import { firstValueFrom, of } from 'rxjs';
+import { RateLimitInterceptor, isRateLimitExempt } from '../src/common/rate-limit.interceptor';
 import { SystemConfigService } from '../src/common/system-config.service';
 import { setupTestDatabase, truncateAll } from './setup';
 
@@ -118,21 +119,54 @@ describe('Rate limiting (Modül 2 §1.5)', () => {
     // that shipping them cannot quietly bring them under the limiter.
     it('exempts the SOS prefixes even far past every quota', () => {
       for (const path of ['/sos-events', '/sos-events/abc/advance', '/call-attempts']) {
-        expect(isExempt(path)).toBe(true);
+        expect(isRateLimitExempt(path)).toBe(true);
       }
     });
 
     it('does not accidentally exempt anything else', () => {
-      for (const path of ['/me', '/auth/login', '/consents', '/emergency-contacts/x', '/sos', '/callattempts']) {
-        expect(isExempt(path)).toBe(false);
+      for (const path of ['/me', '/auth/login', '/consents', '/emergency-contacts/x', '/sos', '/callattempts', '/sos-events-summary', '/call-attempts-report']) {
+        expect(isRateLimitExempt(path)).toBe(false);
       }
+    });
+  });
+
+  describe('Redis outage (Reviewer D Medium — fail open)', () => {
+    // A rate limiter is an abuse guard, not a correctness mechanism; a Redis
+    // blip must NOT 500 the whole non-SOS API. Constructed with stubs so the
+    // test doesn't depend on actually killing Redis.
+    function makeInterceptor(redisStub: { incr: () => Promise<number>; expire?: () => Promise<number> }) {
+      const systemConfig = { get: async () => 60 } as unknown as ConstructorParameters<typeof RateLimitInterceptor>[1];
+      return new RateLimitInterceptor(redisStub as unknown as ConstructorParameters<typeof RateLimitInterceptor>[0], systemConfig);
+    }
+
+    function ctxFor(url: string) {
+      const request = { url, method: 'GET', authContext: { userId: 'u1' } };
+      return {
+        switchToHttp: () => ({ getRequest: () => request }),
+      } as unknown as Parameters<RateLimitInterceptor['intercept']>[0];
+    }
+
+    const nextOk = { handle: () => of('ok') } as unknown as Parameters<RateLimitInterceptor['intercept']>[1];
+
+    it('lets the request through when Redis.incr rejects', async () => {
+      const interceptor = makeInterceptor({ incr: () => Promise.reject(new Error('ECONNREFUSED')) });
+      const result = await firstValueFrom(interceptor.intercept(ctxFor('/v1/me'), nextOk));
+      expect(result).toBe('ok');
+    });
+
+    it('still short-circuits SOS before Redis is even consulted', async () => {
+      let touched = false;
+      const interceptor = makeInterceptor({
+        incr: () => {
+          touched = true;
+          return Promise.reject(new Error('down'));
+        },
+      });
+      const result = await firstValueFrom(interceptor.intercept(ctxFor('/v1/sos-events'), nextOk));
+      expect(result).toBe('ok');
+      expect(touched).toBe(false); // exemption returns before consume()
     });
   });
 });
 
-/** Mirrors the interceptor's exemption test against its own declared list, so
- * this can't drift from the implementation. */
-function isExempt(path: string): boolean {
-  const prefixes = (RateLimitInterceptor as unknown as { EXEMPT_PREFIXES: string[] }).EXEMPT_PREFIXES;
-  return prefixes.some((p) => path.startsWith(p));
-}
+
