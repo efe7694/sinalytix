@@ -17,7 +17,8 @@ import type { Pool } from 'pg';
 import Redis from 'ioredis';
 import { AppModule } from '../src/app.module';
 import { ApiErrorFilter } from '../src/common/api-error.filter';
-import { setupTestDatabase, truncateAll } from './setup';
+import { createUser, setupTestDatabase, truncateAll } from './setup';
+import { ConsentsService } from '../src/consents/consents.service';
 
 async function inject(
   app: NestFastifyApplication,
@@ -31,12 +32,13 @@ describe('ConsentRecord endpoints (Modül 2 §3.2)', () => {
   let ownerPool: Pool;
   let ownerDb: Kysely<Database>;
   let appPool: Pool;
+  let appDb: Kysely<Database>;
   let redis: Redis;
   let token: string;
   let userId: string;
 
   beforeAll(async () => {
-    ({ ownerPool, ownerDb, appPool } = await setupTestDatabase());
+    ({ ownerPool, ownerDb, appPool, appDb } = await setupTestDatabase());
     redis = new Redis(process.env.REDIS_URL as string);
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
@@ -133,6 +135,43 @@ describe('ConsentRecord endpoints (Modül 2 §3.2)', () => {
     });
     expect(res.statusCode).toBe(403);
     expect(JSON.parse(res.body).error.code).toBe('PERMISSION_DENIED');
+  });
+
+  it('C17a SUCCESS: a clinician records consent for an app-less patient (regression — used to 500 via RETURNING/RLS)', async () => {
+    // The on-behalf write sets user_id = the PATIENT, but migration 0004's
+    // SELECT policy is user_id = acting (the clinician), and Postgres re-checks
+    // SELECT on a RETURNING row → the row (patient-owned) failed it → 500,
+    // nothing recorded. Independent review S3-1. Tested at the service level
+    // because a clinician session needs HCP email+password auth this suite
+    // doesn't set up; the RLS behavior under test is identical.
+    const clinician = await createUser(appDb, { phone_e164: '+14165557801', roles: ['clinician'] });
+    const patient = await createUser(appDb, { phone_e164: '+14165557802', roles: ['patient'] });
+    const svc = new ConsentsService(appDb);
+
+    const result = await svc.create(
+      { userId: clinician.user_id, roles: ['clinician'], appContext: 'hcp' },
+      {
+        app_context: 'hcp',
+        version: 'tos-clin-1',
+        recorded_channel: 'clinician_recorded',
+        flags: { accept_tos: true },
+        consented_at: new Date().toISOString(),
+        on_behalf_of_patient_id: patient.user_id,
+      },
+      'deadbeef'.repeat(8),
+    );
+
+    expect(result.consent_id).toBeTruthy();
+    expect(result.server_recorded_at).toBeTruthy();
+    // The record exists and is owned by the PATIENT, not the clinician.
+    const rows = await ownerDb
+      .selectFrom('consent_records')
+      .selectAll()
+      .where('consent_id', '=', result.consent_id)
+      .execute();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.user_id).toBe(patient.user_id);
+    expect(rows[0]?.recorded_channel).toBe('clinician_recorded');
   });
 
   it('returns the full immutable history, newest first', async () => {

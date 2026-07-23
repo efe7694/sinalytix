@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Kysely } from 'kysely';
 import type { Database } from '@sinalytix/db';
@@ -44,29 +45,42 @@ export class ConsentsService {
   ): Promise<ConsentRecordPublic> {
     const subjectUserId = this.resolveSubject(actor, body);
 
-    return withRlsContext(
+    // consent_id + server_recorded_at are generated app-side and the INSERT
+    // runs WITHOUT `RETURNING`. This is not a style choice — it is required for
+    // the C17a on-behalf path: `resolveSubject` sets `user_id` to the PATIENT,
+    // but migration 0004's SELECT policy is `user_id = app_acting_user_id()`
+    // (the clinician). Postgres re-checks the SELECT policy against the row a
+    // `RETURNING` would emit, and that row (patient-owned) fails it — so a
+    // `RETURNING` insert 500s and records nothing (independent review S3-1;
+    // the same RETURNING-re-checks-SELECT trap as DEVIATIONS D7/D15.4b).
+    // Generating both fields here sidesteps the read entirely. `server_recorded_at`
+    // is the API server's own clock, which IS the server-recording time the
+    // field means (Modül 1 §4.1) — no fidelity is lost versus the DB default.
+    const consentId = randomUUID();
+    const serverRecordedAt = new Date();
+
+    await withRlsContext(
       this.db,
       { actingUserId: actor.userId, appContext: actor.appContext, actingRoles: actor.roles },
       async (trx) => {
-        const row = await trx
+        await trx
           .insertInto('consent_records')
           .values({
+            consent_id: consentId,
             user_id: subjectUserId,
             app_context: body.app_context,
             version: body.version,
             recorded_channel: body.recorded_channel,
             flags: body.flags,
             consented_at: new Date(body.consented_at),
+            server_recorded_at: serverRecordedAt,
             ip_hash: ipHash ?? null,
           })
-          .returning(['consent_id', 'server_recorded_at'])
-          .executeTakeFirstOrThrow();
-        return {
-          consent_id: row.consent_id,
-          server_recorded_at: row.server_recorded_at.toISOString(),
-        };
+          .execute();
       },
     );
+
+    return { consent_id: consentId, server_recorded_at: serverRecordedAt.toISOString() };
   }
 
   /**

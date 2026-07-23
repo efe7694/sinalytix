@@ -25,7 +25,7 @@ export async function submitConsentRecord(
   draft: ConsentDraft,
   tosVersion: string,
 ): Promise<void> {
-  await fetch(`${CORE_API_BASE_URL}/consents`, {
+  const res = await fetch(`${CORE_API_BASE_URL}/consents`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -48,6 +48,12 @@ export async function submitConsentRecord(
       consented_at: draft.consented_at ?? new Date().toISOString(),
     }),
   });
+  // Best-effort (the call sites treat a throw as non-fatal), but a non-2xx must
+  // not read as success: surface it so the failure is visible in logs rather
+  // than silently dropping a compliance record (independent review S3-3).
+  if (!res.ok) {
+    throw new Error(`consent record POST failed: ${res.status}`);
+  }
 }
 
 function randomKey(): string {

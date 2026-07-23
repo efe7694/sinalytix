@@ -161,9 +161,19 @@ export class ApprovalRequestsService {
         phone?: string | null;
       };
       if (p.op === 'create') {
-        // The slot is resolved NOW, not at request time: 48 hours of approval
-        // window is plenty of time for the patient to have freed or filled a
-        // different one.
+        // Everything below is re-resolved at APPROVAL time, not request time:
+        // 48 hours is plenty for the patient to have freed/filled a slot or —
+        // via a second, separately-approved pending request — already added
+        // this very phone. Two co-pending same-phone creates both pass the
+        // request-time duplicate check (neither is inserted while pending), so
+        // without this the second approval trips the partial-unique index and
+        // 500s the approver + rolls back the decision (independent review,
+        // Finding 2). If the phone is already an active contact, the create is
+        // a satisfied no-op — the patient's intent ("have this number as a
+        // contact") already holds.
+        if (await this.ecPhoneExists(trx, patientId, p.phone ?? '')) {
+          return;
+        }
         const sortOrder = await ecNextSortOrder(trx, patientId);
         if (sortOrder === null) {
           throw new ApiException({
@@ -183,13 +193,21 @@ export class ApprovalRequestsService {
         return;
       }
       if (p.op === 'update' && p.ec_id) {
+        // Same guard for a phone edit that now collides with another active
+        // contact's number (added/edited while this request sat pending).
+        // Skip only the phone field in that case — the rest of the edit
+        // (name/relationship) is still applied, and the phone simply stays
+        // what it was, which is the safe outcome (the SOS chain keeps a valid,
+        // non-duplicated number).
+        const phoneCollides =
+          p.phone != null && (await this.ecPhoneExists(trx, patientId, p.phone, p.ec_id));
         await ecApplyUpdate(trx, {
           ecId: p.ec_id,
           patientId,
           relationship: p.relationship,
           firstName: p.first_name,
           lastName: p.last_name,
-          phone: p.phone,
+          phone: phoneCollides ? null : p.phone,
         });
         return;
       }
@@ -208,5 +226,26 @@ export class ApprovalRequestsService {
     // but have no gated trigger endpoint yet — profile_edit defaults to
     // ungated, and account deletion is "bilgilendirme" (notify, never block),
     // so no pending request of either type can reach here.
+  }
+
+  /** Is `phone` already an active emergency contact for `patientId`? Runs on
+   * the same `trx` as the deferred executor (owner-privileged inside the
+   * decide transaction), so it sees the patient's own rows including any
+   * added by a sibling approval in this same window. `excludeEcId` skips the
+   * row being edited. */
+  private async ecPhoneExists(
+    trx: Kysely<Database>,
+    patientId: string,
+    phone: string,
+    excludeEcId?: string,
+  ): Promise<boolean> {
+    let q = trx
+      .selectFrom('emergency_contacts')
+      .select('ec_id')
+      .where('patient_id', '=', patientId)
+      .where('phone', '=', phone)
+      .where('deleted_at', 'is', null);
+    if (excludeEcId) q = q.where('ec_id', '!=', excludeEcId);
+    return (await q.executeTakeFirst()) !== undefined;
   }
 }
