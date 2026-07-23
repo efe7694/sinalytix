@@ -35,7 +35,7 @@ export interface PolicyDecisionResult {
 }
 
 /**
- * Module 2 §1.3 (`X-App-Context` must match the session's) + Module 2 §3.1
+ * Module 2 §1.2 (`X-App-Context` must match the session's) + Module 2 §3.1
  * ("`User.status=suspended_*` → tüm uçlar 403 (auth hariç); `incomplete` →
  * yalnız onboarding uçları" — Faz 0's whole surface is auth/onboarding, so
  * `incomplete` is permitted here without a per-route allowlist yet).

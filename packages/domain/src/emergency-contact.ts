@@ -1,5 +1,5 @@
 /**
- * EmergencyContact wire contract — Module 2 §3.3, Dictionary §4/C20/C21/C23.
+ * EmergencyContact wire contract — Module 2 §3.4 (S4), Dictionary §4/C20/C21/C23.
  */
 
 import { z } from 'zod';

@@ -1,5 +1,5 @@
 /**
- * Canonical enums — mirrors Sinalytix_Canonical_Data_Dictionary__R2.md exactly.
+ * Canonical enums — mirrors docs/spec/Sinalytix_Canonical_Data_Dictionary.md (v0.2) exactly.
  *
  * Scope: Faz 0 (identity, session, consent-record) + Faz 1 (consent grant,
  * link fabric) so far. Later phases add their own enum files here as the
@@ -45,7 +45,7 @@ export const Locale = {
 } as const;
 export type Locale = (typeof Locale)[keyof typeof Locale];
 
-// ── Session / App context (Dictionary §1, Module 2 §1.3) ─
+// ── Session / App context (Dictionary §1, Module 2 §1.2) ─
 
 /** K9 added `admin` as the FIFTH surface. An admin session is never shared
  * with another app (no SSO) and carries its own, much tighter session policy
