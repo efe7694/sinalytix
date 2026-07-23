@@ -67,10 +67,14 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
   }
 
   // Fixtures seeded via the owner connection (bypasses RLS — setup only).
-  async function seedActiveFamilyLink(patientId: string, familyId: string) {
+  // Default `edit`: FAM-12 §2.3 says only edit/full family may approve, so a
+  // link seeded for the "eligible approver" tests must be edit/full. A
+  // `view`-level link is a DIFFERENT case (not an eligible approver → the K4
+  // deadlock override) and is seeded explicitly where it's under test.
+  async function seedActiveFamilyLink(patientId: string, familyId: string, permissionLevel = 'edit') {
     await ownerDb
       .insertInto('patient_family_links')
-      .values({ patient_id: patientId, family_user_id: familyId, relationship: 'child', status: 'active', source: 'code', linked_at: new Date() })
+      .values({ patient_id: patientId, family_user_id: familyId, relationship: 'child', status: 'active', source: 'code', linked_at: new Date(), permission_level: permissionLevel })
       .execute();
   }
   async function seedLinkedCaregiver(patientId: string, caregiverId: string) {
@@ -142,6 +146,48 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
       expect(res.executed).toBe(false);
       expect(res.status).toBe('pending');
       expect(await linkStatus(linkId)).toBe('linked');
+    });
+
+    it('K4 deadlock override: a VIEW-only family member is NOT an eligible approver, so the action runs immediately', async () => {
+      // FAM-12 §2.3 forbids a view-level member from approving; §2512's K4
+      // override then requires the action to run rather than sit pending
+      // forever (a view member's UI has no approve button). The 0014
+      // eligibility functions had no permission_level filter, so a view-only
+      // family made the gate DEFER — the exact deadlock K4 forbids. Independent
+      // review finding; fixed in migration 0019.
+      const patient = await makePatient();
+      const family = await makeFamily();
+      const caregiver = await makeCaregiver();
+      await seedActiveFamilyLink(patient.user_id, family.user_id, 'view');
+      const linkId = await seedLinkedCaregiver(patient.user_id, caregiver.user_id);
+
+      const res = await caregiverLinks.unlink(linkId, caregiver.user_id);
+      expect(res.executed).toBe(true);
+      expect(res.status).toBe('auto_approved_no_approver');
+      expect(await linkStatus(linkId)).toBe('unlinked');
+    });
+
+    it('SECURITY: a view-only family member cannot approve a pending request via a direct decide() call', async () => {
+      // The other half of the same bug: even if a request is pending (because
+      // an edit/full member exists), a view-level member calling the decide
+      // endpoint directly must be refused — it is substitute-decision
+      // authority K6/FAM-13 withholds from them.
+      const patient = await makePatient();
+      const approver = await makeFamily('Editor');
+      const viewer = await makeFamily('Viewer');
+      const caregiver = await makeCaregiver();
+      await seedActiveFamilyLink(patient.user_id, approver.user_id, 'edit');
+      await seedActiveFamilyLink(patient.user_id, viewer.user_id, 'view');
+      const linkId = await seedLinkedCaregiver(patient.user_id, caregiver.user_id);
+      const res = await caregiverLinks.unlink(linkId, caregiver.user_id);
+      expect(res.status).toBe('pending');
+
+      await expect(approvals.decide(res.approval_id as string, viewer.user_id, 'approved')).rejects.toMatchObject({
+        status: 403,
+      });
+      // The edit-level member still can.
+      await approvals.decide(res.approval_id as string, approver.user_id, 'approved');
+      expect(await linkStatus(linkId)).toBe('unlinked');
     });
 
     it('an explicit opt-out turns the gate off (K4: the toggle belongs to the patient)', async () => {
