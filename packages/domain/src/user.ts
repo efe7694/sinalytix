@@ -7,6 +7,20 @@
 import { z } from 'zod';
 import { AppContext, AuthMethod, Locale, Platform, Role, UserStatus } from './enums';
 
+/**
+ * E.164 (Modül 1 §3.1 "`phone_e164` — E.164 normalize"). One definition,
+ * because a second copy is a second chance to disagree: `/auth/otp/request`
+ * used to accept `z.string().min(8)`, so any 8-character string could be
+ * written into `phone_e164` while `EmergencyContact` enforced the real
+ * format — found by the error-envelope test (D15/B1 slice).
+ *
+ * No zod `message` here: validation errors go out as `details[].issue` code
+ * slugs and a localized top-level message (Modül 2 §1.3), so an inline
+ * sentence would be dead text in exactly one language.
+ */
+export const E164PhoneSchema = z.string().regex(/^\+[1-9]\d{7,14}$/);
+
+
 // ── /me — safe subset of `User` (Module 2 §3.1) ─────────
 
 export const UserPublicSchema = z.object({

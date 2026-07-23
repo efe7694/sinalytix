@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS } from './redis.module';
-import { ProblemException } from './problem.exception';
+import { ApiException } from './api.exception';
 
 const FAIL_LIMIT = 5;
 const LOCKOUT_SECONDS = 15 * 60;
@@ -32,7 +32,7 @@ export class RedeemRateLimiter {
    * locked out, so a locked actor can't even learn whether a code is valid. */
   async assertNotLockedOut(namespace: string, userId: string): Promise<void> {
     if (await this.redis.get(this.lockKey(namespace, userId))) {
-      throw ProblemException.tooManyRequests('Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.', LOCKOUT_SECONDS);
+      throw ApiException.rateLimited('link.too_many_attempts', LOCKOUT_SECONDS, { minutes: LOCKOUT_SECONDS / 60 });
     }
   }
 
@@ -49,8 +49,8 @@ export class RedeemRateLimiter {
     }
     if (fails >= FAIL_LIMIT) {
       await this.redis.set(this.lockKey(namespace, userId), '1', 'EX', LOCKOUT_SECONDS);
-      throw ProblemException.tooManyRequests('Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.', LOCKOUT_SECONDS);
+      throw ApiException.rateLimited('link.too_many_attempts', LOCKOUT_SECONDS, { minutes: LOCKOUT_SECONDS / 60 });
     }
-    throw ProblemException.notFound('Kod geçersiz veya süresi dolmuş.');
+    throw ApiException.notFound('link.code_invalid_or_expired');
   }
 }

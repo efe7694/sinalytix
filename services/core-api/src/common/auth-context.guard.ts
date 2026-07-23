@@ -5,7 +5,7 @@ import type { Kysely } from 'kysely';
 import type { Database } from '@sinalytix/db';
 import { withRlsContext } from '@sinalytix/db';
 import { KYSELY } from './db.module';
-import { ProblemException } from './problem.exception';
+import { ApiException } from './api.exception';
 import { TokenService } from '../auth/token.service';
 
 export interface AuthContext {
@@ -40,16 +40,16 @@ export class AuthContextGuard implements CanActivate {
 
     const authHeader = request.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
-      throw ProblemException.unauthorized('Erişim jetonu eksik.');
+      throw ApiException.unauthenticated('auth.access_token_missing');
     }
     const payload = this.tokenService.verifyAccessToken(authHeader.slice('Bearer '.length));
     if (!payload) {
-      throw ProblemException.unauthorized('Erişim jetonu geçersiz veya süresi dolmuş.');
+      throw ApiException.unauthenticated('auth.access_token_invalid');
     }
 
     const requestAppContext = request.headers['x-app-context'];
     if (typeof requestAppContext !== 'string' || requestAppContext.length === 0) {
-      throw ProblemException.badRequest('X-App-Context header zorunlu.');
+      throw ApiException.badRequest('request.app_context_header_required');
     }
 
     const resolved = await withRlsContext(this.db, { actingUserId: payload.sub }, async (trx) => {
@@ -67,7 +67,7 @@ export class AuthContextGuard implements CanActivate {
     });
 
     if (!resolved.session || resolved.session.revoked_at || !resolved.user) {
-      throw ProblemException.unauthorized('Oturum geçersiz veya sonlandırılmış.');
+      throw ApiException.unauthenticated('auth.session_invalid');
     }
 
     const decision = checkIdentity(
@@ -75,7 +75,16 @@ export class AuthContextGuard implements CanActivate {
       { requestAppContext },
     );
     if (decision.decision === 'deny') {
-      throw ProblemException.forbidden(decision.reasons.join(','));
+      // PolicyEngine reasons are internal rule ids, not user-facing text —
+      // map them to the canonical wire codes so a client can branch (Modül 2
+      // §1.3). `app_context_mismatch` has its own code precisely because the
+      // client's correct reaction differs: sign in from the right app, not
+      // "you lack permission".
+      throw decision.reasons.includes('app_context_mismatch')
+        ? ApiException.appContextMismatch()
+        : ApiException.permissionDenied('error.permission_denied', [
+            { field: 'session', issue: decision.reasons[0] ?? 'denied' },
+          ]);
     }
 
     request.authContext = {

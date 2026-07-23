@@ -1,5 +1,5 @@
 import type { PaginatedResponse } from '@sinalytix/domain';
-import { ProblemException } from './problem.exception';
+import { ApiException } from './api.exception';
 
 interface CursorPayload {
   createdAt: string;
@@ -21,7 +21,7 @@ export function decodeCursor(cursor: string): CursorPayload {
     }
     return payload;
   } catch {
-    throw ProblemException.badRequest('Geçersiz cursor.');
+    throw ApiException.badRequest('request.invalid_cursor');
   }
 }
 

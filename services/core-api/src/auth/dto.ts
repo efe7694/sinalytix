@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { E164PhoneSchema } from '@sinalytix/domain';
 
-export const OtpRequestBodySchema = z.object({ phone_e164: z.string().min(8) });
-export const OtpVerifyBodySchema = z.object({ phone_e164: z.string().min(8), code: z.string().length(6) });
+export const OtpRequestBodySchema = z.object({ phone_e164: E164PhoneSchema });
+export const OtpVerifyBodySchema = z.object({ phone_e164: E164PhoneSchema, code: z.string().length(6) });
 export const RefreshBodySchema = z.object({ refresh_token: z.string() });
 export const TotpVerifyBodySchema = z.object({ code: z.string().length(6) });
 export const MfaCompleteBodySchema = z.object({ mfa_token: z.string(), code: z.string().length(6) });

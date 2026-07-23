@@ -416,6 +416,21 @@ importers:
         specifier: ^8.21.0
         version: 8.62.1(eslint@9.39.4)(typescript@5.9.3)
 
+  packages/i18n:
+    devDependencies:
+      eslint:
+        specifier: ^9.19.0
+        version: 9.39.4
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.21.0
+        version: 8.62.1(eslint@9.39.4)(typescript@5.9.3)
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.0)(lightningcss@1.32.0)(terser@5.46.2)
+
   packages/policy-engine:
     devDependencies:
       eslint:
@@ -489,6 +504,9 @@ importers:
       '@sinalytix/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@sinalytix/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@sinalytix/policy-engine':
         specifier: workspace:*
         version: link:../../packages/policy-engine

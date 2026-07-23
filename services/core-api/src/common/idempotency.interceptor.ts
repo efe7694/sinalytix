@@ -1,9 +1,10 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { IDEMPOTENT_REPLAY_HEADER } from '@sinalytix/domain';
 import { Observable, from, of } from 'rxjs';
 import { switchMap, tap } from 'rxjs/operators';
 import { IdempotencyService } from './idempotency.service';
-import { ProblemException } from './problem.exception';
+import { ApiException } from './api.exception';
 
 /**
  * Module 2 §1.2 + §7 — mandatory `Idempotency-Key` on mutating routes. Apply with
@@ -24,15 +25,20 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
+    const reply = context.switchToHttp().getResponse<FastifyReply>();
 
-    const idempotencyKeyHeader = request.headers['idempotency-key'];
+    // Modül 2 §1.2 names the header `X-Idempotency-Key`. The bare
+    // `Idempotency-Key` spelling is still accepted on read so an app build
+    // already in users' hands doesn't start 400-ing the moment this deploys;
+    // clients send the X- form (D15 item B2).
+    const idempotencyKeyHeader = request.headers['x-idempotency-key'] ?? request.headers['idempotency-key'];
     if (typeof idempotencyKeyHeader !== 'string' || idempotencyKeyHeader.length === 0) {
-      throw ProblemException.badRequest('Idempotency-Key header zorunlu.');
+      throw ApiException.badRequest('request.idempotency_key_required');
     }
 
     const userId = request.authContext?.userId;
     if (!userId) {
-      throw ProblemException.unauthorized('Kimlik doğrulama gerekli.');
+      throw ApiException.unauthenticated('auth.required');
     }
 
     const method = request.method;
@@ -43,8 +49,12 @@ export class IdempotencyInterceptor implements NestInterceptor {
       switchMap((cached) => {
         if (cached) {
           if (cached.bodyHash !== bodyHash) {
-            throw ProblemException.idempotencyKeyReuse();
+            throw ApiException.idempotencyKeyReuse();
           }
+          // Modül 2 §1.3 `IDEMPOTENCY_REPLAY`: the replay is a 200 carrying
+          // the ORIGINAL success body — not an error — flagged by this header
+          // so a client can tell "my retry was absorbed" from "it ran twice".
+          reply.header(IDEMPOTENT_REPLAY_HEADER, 'true');
           return of(cached.body);
         }
         return next.handle().pipe(
