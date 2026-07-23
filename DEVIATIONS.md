@@ -193,6 +193,42 @@ Regression tests added for findings 1-3 in `emergency-contacts.test.ts`; finding
 
 **Frontend — the family approvals screen** (`apps/family/app/approvals.tsx`, the slice's named deliverable): rewired from the legacy `GET /family/patients/:id/approvals` + `PATCH .../:approvalId {status}` to core-api `GET /patients/:id/approvals` + `POST /approvals/:id/{approve,reject}`; renders the server-computed `description` + `requested_by_name`; adds the two previously-missing status branches (`expired`, `auto_approved_no_approver`); and replaces the silent `catch {}` with real 403/409 error surfacing + a re-fetch (approving carries out a server-side action, so the authoritative post-decision state comes from a reload, not an optimistic flip). The patient-config UI and the caregiver-side unlink-trigger UI are API-level this slice (exercised via the e2e), not new app screens — the approvals screen is the plan's named frontend surface.
 
+## D15 — Doküman seti v2.0 (2026-07-22) hizalaması: yeni spec ile mevcut kod arasındaki 12 gerçek fark
+
+**Ne oldu.** Faz 0 ve Faz 1'in tamamı (PR #1–#13) doküman setinin *önceki* sürümüne göre yazıldı (Canonical Data Dictionary `__R2.md` + Core Infra Modül 1–2'nin eski revizyonu). 2026-07-22'de set v2.0 olarak yenilendi: Kanonik Sözlük v0.2'ye K9–K11 kararları eklendi, Modül 2–4 yeniden yayımlandı (bölüm numaralandırması dahil değişti), ve altı yeni doküman geldi (Admin Panel PRD — **5. yüzey**, SOS UX Akış Spec'i, Tasarım Sistemi, Mühendislik El Kitabı, Test & QA Stratejisi, Uyum & Güvenlik Kontrol Listesi, Kapsam Matrisi, Sözlükçe, Developer Teslim Notu).
+
+**Doküman seti artık repo'da: `docs/spec/`.** El Kitabı §2 bunu zaten şart koşuyordu; pratikte spec her oturumda dışarıdan yeniden ekleniyordu ve "hangi sürüme göre kodladık?" sorusu kalıcı olarak belirsizdi. `docs/spec/README.md` öncelik sırasını, okuma kurallarını, sözlük-önce sürecini ve repo↔El Kitabı §2 dizin eşlemesini tutar. Yeni bir spec sürümünde klasör bütünüyle değiştirilir ve kod etkisi buraya yeni bir D girdisi olarak yazılır.
+
+**Denetim sonucu — kodu doğrudan etkileyen 12 fark.** Bunlar "Faz 1.5 — Doküman Hizalama" adıyla 6 slice'a bölündü; her slice kendi PR'ı, sırası:
+
+*Slice 0 (bu girdi):* doküman seti + D15 + kod yorumlarındaki eskimiş spec atıflarının düzeltilmesi.
+
+*Slice 1 — K9/K10 şema:*
+- **A1 (K9):** `admin` app_context hiçbir yerde yok — `AppContext` enum'unda ADMIN eksik, `sessions` ve `consent_records` CHECK constraint'leri yalnız `('patient','family','caregiver','hcp')`.
+- **A2 (K10):** `system_config` ve `feature_flags` tabloları hiç yok; `admin_users.admin_role` tekil `text`, spec `text[]` {support|credentialing|compliance|ops|superadmin} diyor.
+- **A3 (K10):** runtime sabitleri koda gömülü — K10 bunu açıkça yasaklıyor. Somut ihlaller: `approval.expiry_hours`=48 (`approval-gate.service.ts`), `link.code_ttl_min`=15 iki ayrı dosyada (`family-links.service.ts`, `caregiver-links.service.ts`).
+- **A4:** oturum politikası app_context'e duyarlı değil (kod: 5 oturum / 90g max / 30g idle sabit; spec: admin → max 2, 8s mutlak, 15dk idle).
+
+*Slice 2 — hata zarfı:*
+- **B1:** kod RFC 7807 (`{type,title,status,detail,trace_id,errors[]}`) üretiyor; bu **eski** Modül 2 §1.4'ün kontratıydı. Yeni Modül 2 §1.3: `{"error":{code,message,details:[{field,issue}],request_id}}` + kanonik kod seti (`VALIDATION_FAILED`, `UNAUTHENTICATED`, `PERMISSION_DENIED`, `APP_CONTEXT_MISMATCH`, `CONSENT_REQUIRED`, `NOT_FOUND`, `CONFLICT_VERSION`, `IDEMPOTENCY_REPLAY`, `RATE_LIMITED`, `REAUTH_REQUIRED`). **Karar (ürün sahibi, 2026-07-23): tam geçiş, RFC 7807 bırakılıyor** — çift kontrat taşımak yerine spec'e uyuluyor; setin öncelik kuralı (`_OKUBENI`) gereği Modül 2 üstte. Geçiş şimdi yapılıyor çünkü yüzey henüz küçük (129 test, 3 app): Faz 4'ten sonra aynı değişiklik kat kat pahalı.
+- **B2:** idempotency başlığı `Idempotency-Key` → spec `X-Idempotency-Key`; replay yanıtında `X-Idempotent-Replayed: true` başlığı yok.
+
+*Slice 3 — consent uçları:*
+- **B4:** `/consents` (ConsentRecord yazım/okuma) uçları hiç yok — tablo Faz 0'da (migration 0004) var, controller yok. Spec §3.2: POST + GET, PATCH/DELETE → 405.
+- **B5:** grant DTO'larında `enforcement: "declarative_v0"` alanı yok; Modül 2 §3.2 V0 notu bu farkın istemciye **açıkça bildirilmesini** şart koşuyor.
+
+*Slice 4 — K6 + onay aksiyon tipleri:*
+- **B3:** `PATCH /family-links/{id}` ucu hiç yok, dolayısıyla **K6 sunucuda hiç uygulanmıyor** (`permission_level=full` yalnız `SDMDeclaration.active=true` üyeye verilebilir). Şu an ihlal *üretmiyor* çünkü kabul akışı permission'ı her zaman `view` yazıyor ve değiştirecek bir yol yok — yani bu bir açık değil, eksik bir kural + eksik bir uç.
+- **A5:** `ApprovalActionType` enum'u spec'ten sapmış. Kod: `caregiver_link_change`, `family_link_permission_change`. Modül 1 §9: `caregiver_link_change`, `ec_change`, `profile_edit`, `account_delete`. `family_link_permission_change` spec'te yok (D14'te zaten "trigger endpoint'i yok, ürün semantiği belirsiz" diye işaretlenmişti) — Slice 4'te uzlaştırılacak.
+
+*Slice 5 — rate-limit + yol hizalaması:*
+- **B6:** genel rate-limit yok (§1.5: okuma 300/dk, yazma 60/dk, auth 10/dk, **SOS muaf**). Yalnız OTP ve redeem'e özel limiter'lar var.
+- **B7:** uç yolları Modül 2 §3 kataloğundan farklı (`/patients/:id/consent-grants` vs `/grants`, `/caregiver-links/redeem` vs `/claim`, `POST /:id/unlink` vs `DELETE /:id`). Çoğu kozmetik — spec "CRUD'un bariz kısımları tekrarlanmaz" diyor ve iç içe yol da geçerli bir REST ifadesi — ama sözleşme netliği için hizalanıyor.
+
+**Yeniden adlandırılmayanlar (bilinçli).** Monorepo düzeni El Kitabı §2'den farklı (`services/*` vs `apps/api|worker|rt-gateway`, `packages/domain` vs `packages/contracts`, `packages/policy-engine` vs `packages/policy`). El Kitabı §1 ikameye açıkça izin veriyor ("kontratlar ve SLO'lar değişmez"); toplu yeniden adlandırma saf risk olurdu (her import, her CI yolu, her deploy tanımı) ve hiçbir davranışsal fark üretmezdi. Eşleme tablosu `docs/spec/README.md`'de. **İstisna:** `packages/config` gerçek bir eksikti (K10'un `SystemConfig` istemcisi) ve Slice 1'de ekleniyor.
+
+**Kapsam olarak yeni gelen, "düzeltme" değil "üretim" olan işler** (Faz 1.5'in konusu değil, sonraki fazların): Admin Panel'in tamamı (S9 `/admin/*`, PHI-maskeli varsayılan + reveal, iki-kişi kuralı — `ApprovalRequest` altyapısı `requested_by_role=admin` ile yeniden kullanılıyor, `ai.kill_switch`), SOS'un ekran-ekran spec'i (Faz 4 artık çok daha somut: sunucu-taraflı faz zamanlayıcısı + "cevaplandı türetimi yok" statik-analiz kontrolü), Test & QA'nın CI kapıları (erişim matrisi contracts'tan üretilen kod olarak, axe, guardrail regresyon seti), Tasarım Sistemi token'ları ve `apps/hcp|admin|web`.
+
 ### D15.1 — Slice 1 (K9/K10) uygulanırken bulunanlar
 
 Migration 0015 + `packages/config` yazılırken planlanmamış dört şey çıktı; ikisi kapatılan güvenlik açığı, ikisi kendi kodumun hatası.

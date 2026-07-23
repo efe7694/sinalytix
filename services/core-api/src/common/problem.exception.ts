@@ -7,7 +7,7 @@ export interface ProblemExceptionInit {
   status: number;
   detail: string;
   errors?: ProblemFieldError[];
-  /** Set on 429s (Module 2 §7.4) — `ProblemDetailsFilter` reads this and
+  /** Set on 429s (Module 2 §1.5) — `ProblemDetailsFilter` reads this and
    * sets the actual `Retry-After` response header. */
   retryAfterSeconds?: number;
 }
@@ -90,7 +90,7 @@ export class ProblemException extends HttpException {
     });
   }
 
-  /** Module 2 §6.1: same Idempotency-Key + a different request body → 409,
+  /** Module 2 §1.2: same X-Idempotency-Key + a different request body → 409,
    * distinct from a plain domain-state conflict. */
   static idempotencyKeyReuse(detail = 'Idempotency-Key aynı, istek gövdesi farklı.'): ProblemException {
     return new ProblemException({
