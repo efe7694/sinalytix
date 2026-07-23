@@ -3,6 +3,7 @@ import { DbModule } from './common/db.module';
 import { RedisModule } from './common/redis.module';
 import { ConfigModule } from './common/config.module';
 import { AuthModule } from './auth/auth.module';
+import { ConsentsModule } from './consents/consents.module';
 import { ConsentGrantsModule } from './consent-grants/consent-grants.module';
 import { EmergencyContactsModule } from './emergency-contacts/emergency-contacts.module';
 import { FamilyLinksModule } from './family-links/family-links.module';
@@ -15,6 +16,7 @@ import { ApprovalRequestsModule } from './approval-requests/approval-requests.mo
     RedisModule,
     ConfigModule,
     AuthModule,
+    ConsentsModule,
     ConsentGrantsModule,
     EmergencyContactsModule,
     FamilyLinksModule,

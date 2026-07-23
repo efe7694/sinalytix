@@ -15,6 +15,12 @@ export type OnboardingStep =
   | 'auth'
   | 'done';
 
+/** Version of the ToS/Privacy text the consent screen currently renders.
+ * Bumped together with that copy — `ConsentRecord.version` is what proves
+ * WHICH document a user agreed to, so a stale constant here silently
+ * misattributes their consent. */
+export const TOS_VERSION = 'tos-2026-07';
+
 export interface ConsentDraft {
   accept_tos: boolean;
   accept_privacy: boolean;

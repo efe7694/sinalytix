@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useOnboardingStore, persistOnboardingCompleted } from '@/store/onboarding';
+import { useOnboardingStore, persistOnboardingCompleted, TOS_VERSION } from '@/store/onboarding';
 import { useAuthStore } from '@/store/auth';
 import { BASE_URL, coreApi, ApiError } from '@/lib/api';
 import OnboardingScreen from '@/components/OnboardingScreen';
 import { COLORS, FONT_SIZE, SPACING, BORDER_RADIUS } from '@sinalytix/ui';
+import { submitConsentRecord } from '@/lib/consent';
 
 const OTP_TIMEOUT_SEC = 300;
 const MAX_RETRIES = 3;
@@ -105,6 +106,16 @@ export default function OtpScreen() {
   }
 
   async function submitDraft(accessToken: string) {
+    // Consent first, on its own call — it is the immutable legal record and
+    // must land before any clinical data (Modül 1 §13). Best-effort like the
+    // rest of the draft submit: onboarding is not blocked on it, and the
+    // record can be re-submitted.
+    try {
+      await submitConsentRecord(accessToken, draft.consent, TOS_VERSION);
+    } catch {
+      // Non-fatal — see above.
+    }
+
     try {
       await fetch(`${BASE_URL}/api/v1/auth/complete-onboarding`, {
         method: 'POST',

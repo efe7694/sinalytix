@@ -17,7 +17,24 @@ export const CreateConsentGrantRequestSchema = z.object({
 });
 export type CreateConsentGrantRequest = z.infer<typeof CreateConsentGrantRequestSchema>;
 
+/**
+ * Modül 2 §3.2 V0 note (B2): ConsentGrant is fully written and read in V0,
+ * but LIVE ACCESS ENFORCEMENT is PolicyEngine V1 — in V0 it is RLS + link
+ * tables + application-layer checks + DTO category filtering. The spec
+ * requires that gap to be stated to the client rather than implied, so every
+ * grant carries this marker.
+ *
+ * It is a literal, not a boolean: when the full engine lands the value
+ * becomes `"enforced_v1"` and any client branching on it breaks loudly
+ * instead of silently assuming the old semantics.
+ */
+export const GrantEnforcementSchema = z.literal('declarative_v0');
+export type GrantEnforcement = z.infer<typeof GrantEnforcementSchema>;
+
+export const GRANT_ENFORCEMENT_V0 = 'declarative_v0' as const;
+
 export const ConsentGrantPublicSchema = z.object({
+  enforcement: GrantEnforcementSchema,
   grant_id: z.string().uuid(),
   patient_id: z.string().uuid(),
   granted_to_kind: z.nativeEnum(GrantedToKind),

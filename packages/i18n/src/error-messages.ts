@@ -289,6 +289,16 @@ export const ERROR_MESSAGES = {
   },
 
   // ── Consent ───────────────────────────────────────────────────────────
+  'consent.record_append_only': {
+    en: 'Consent records cannot be changed or deleted. Record a new consent instead.',
+    fr: "Les enregistrements de consentement ne peuvent être ni modifiés ni supprimés. Enregistrez plutôt un nouveau consentement.",
+    tr: 'Onam kayıtları değiştirilemez veya silinemez. Bunun yerine yeni bir onam kaydedin.',
+  },
+  'consent.record_on_behalf_clinician_only': {
+    en: 'Only a clinician or nurse can record consent on behalf of someone else, and only as a clinician-recorded consent.',
+    fr: "Seul un clinicien ou une infirmière peut enregistrer un consentement au nom d'une autre personne, et uniquement comme consentement enregistré par un clinicien.",
+    tr: 'Başkası adına onam kaydını yalnız klinisyen veya hemşire, yalnız klinisyen-kaydı kanalıyla yapabilir.',
+  },
   'consent.family_grant_system_only': {
     en: 'Family access grants are created by the system when a connection is made, not directly.',
     fr: "Les autorisations d'accès familial sont créées par le système lors de la connexion, non directement.",
