@@ -1,5 +1,5 @@
 /**
- * Cursor pagination — Module 2 §1.5. Offset pagination is inconsistent with
+ * Cursor pagination — Module 2 §1.4. Offset pagination is inconsistent with
  * RLS + live data, so every list endpoint uses this shape instead.
  */
 

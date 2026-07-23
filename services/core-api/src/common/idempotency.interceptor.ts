@@ -7,7 +7,7 @@ import { IdempotencyService } from './idempotency.service';
 import { ApiException } from './api.exception';
 
 /**
- * Module 2 §6.1 — mandatory `Idempotency-Key` on mutating routes. Apply with
+ * Module 2 §1.2 + §7 — mandatory `Idempotency-Key` on mutating routes. Apply with
  * `@UseInterceptors(IdempotencyInterceptor)` per-route (not globally; GETs
  * don't need it). Must run on a route already guarded by `AuthContextGuard`
  * (reads `request.authContext.userId` — guards execute before interceptors
