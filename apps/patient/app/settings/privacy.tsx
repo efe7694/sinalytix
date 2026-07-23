@@ -474,6 +474,19 @@ export default function PrivacyScreen() {
   const sortedECs = [...emergencyContacts].sort((a, b) => a.sort_order - b.sort_order);
   const verifyingEc = emergencyContacts.find((ec) => ec.ec_id === verifyingEcId) ?? null;
 
+  /**
+   * FAM-12 gates emergency-contact changes: nothing has been written yet and
+   * the family has 48 hours to decide (K4). Said plainly, because the failure
+   * mode of a vague message here is a patient believing the SOS chain now
+   * reaches someone it does not.
+   */
+  function notifyPendingApproval(action: 'ekleme' | 'kaldırma') {
+    Alert.alert(
+      'Aile onayı bekleniyor',
+      `Acil kişi ${action} talebiniz ailenize iletildi. Onaylanana kadar acil kişi listeniz DEĞİŞMEDİ. Talep 48 saat içinde yanıtlanmazsa kendiliğinden iptal olur.\n\nBu onayı Profil > Gizlilik ayarlarından kapatabilirsiniz.`,
+    );
+  }
+
   function handleReorder(index: number, direction: 'up' | 'down') {
     const arr = [...sortedECs];
     const swapIndex = direction === 'up' ? index - 1 : index + 1;
@@ -490,7 +503,14 @@ export default function PrivacyScreen() {
         {
           text: 'Kaldır',
           style: 'destructive',
-          onPress: () => removeEmergencyContact(ec.ec_id),
+          onPress: async () => {
+            try {
+              const { pendingApproval } = await removeEmergencyContact(ec.ec_id);
+              if (pendingApproval) notifyPendingApproval('kaldırma');
+            } catch {
+              Alert.alert('Hata', 'Acil kişi kaldırılamadı.');
+            }
+          },
         },
       ],
     );
@@ -498,8 +518,14 @@ export default function PrivacyScreen() {
 
   async function handleAddEC(firstName: string, lastName: string, relationship: string, phone: string) {
     try {
-      await addEmergencyContact({ first_name: firstName, last_name: lastName, relationship, phone });
+      const { pendingApproval } = await addEmergencyContact({
+        first_name: firstName,
+        last_name: lastName,
+        relationship,
+        phone,
+      });
       setAddModalVisible(false);
+      if (pendingApproval) notifyPendingApproval('ekleme');
     } catch {
       Alert.alert('Hata', 'Acil kişi eklenirken bir sorun oluştu.');
     }

@@ -8,6 +8,7 @@ import { EmergencyContactsService } from '../src/emergency-contacts/emergency-co
 import { ConsentGrantsService } from '../src/consent-grants/consent-grants.service';
 import { RedeemRateLimiter } from '../src/common/redeem-rate-limiter.service';
 import { SystemConfigService } from '../src/common/system-config.service';
+import { ApprovalGateService } from '../src/approval-requests/approval-gate.service';
 import { withRlsContext } from '@sinalytix/db';
 import { createUser, setupTestDatabase, truncateAll } from './setup';
 
@@ -26,7 +27,7 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
     redis = new Redis(process.env.REDIS_URL as string);
     consentGrantsService = new ConsentGrantsService(appDb);
     service = new FamilyLinksService(appDb, consentGrantsService, new RedeemRateLimiter(redis), new SystemConfigService(appDb));
-    ecService = new EmergencyContactsService(appDb, redis);
+    ecService = new EmergencyContactsService(appDb, new ApprovalGateService(appDb, new SystemConfigService(appDb)), redis);
   });
 
   beforeEach(async () => {
@@ -56,6 +57,14 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
   }
   async function makeFamily() {
     return createUser(appDb, { phone_e164: phone(), roles: ['family'], status: 'active' });
+  }
+
+
+  /** EC fixture: unwraps the FAM-12 gate result (see emergency-contacts.test.ts). */
+  async function createEcFixture(...args: Parameters<EmergencyContactsService['create']>) {
+    const res = await ecService.create(...args);
+    if (!res.executed || !res.contact) throw new Error('expected an immediate create, got a deferred approval');
+    return res.contact;
   }
 
   describe('generateCode() / revokeCode()', () => {
@@ -175,7 +184,7 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
     it('activates immediately, creates a baseline grant, and updates the emergency_contacts row', async () => {
       const patient = await makePatient();
       const family = await makeFamily();
-      const ec = await ecService.create(patient.user_id, patient.user_id, {
+      const ec = await createEcFixture(patient.user_id, patient.user_id, {
         relationship: 'spouse',
         first_name: 'Ayşe',
         last_name: 'Yılmaz',
@@ -199,7 +208,7 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
     it('an active ec_invite family member CANNOT tamper with or delete the patient\'s emergency contact (Slice 3 review C1)', async () => {
       const patient = await makePatient();
       const family = await makeFamily();
-      const ec = await ecService.create(patient.user_id, patient.user_id, {
+      const ec = await createEcFixture(patient.user_id, patient.user_id, {
         relationship: 'spouse',
         first_name: 'Ayşe',
         last_name: 'Yılmaz',
@@ -226,7 +235,7 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
     it('ec_invite redeem does not require a relationship field', async () => {
       const patient = await makePatient();
       const family = await makeFamily();
-      const ec = await ecService.create(patient.user_id, patient.user_id, {
+      const ec = await createEcFixture(patient.user_id, patient.user_id, {
         relationship: 'sibling',
         first_name: 'A',
         last_name: 'B',
@@ -238,7 +247,7 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
 
     it('generating a new EC invite replaces the previous one for that same contact', async () => {
       const patient = await makePatient();
-      const ec = await ecService.create(patient.user_id, patient.user_id, {
+      const ec = await createEcFixture(patient.user_id, patient.user_id, {
         relationship: 'spouse',
         first_name: 'A',
         last_name: 'B',
@@ -255,7 +264,7 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
     it('atomicity: if the invited contact is removed before redeem, the whole transaction rolls back (no orphan link/grant, code not permanently burned)', async () => {
       const patient = await makePatient();
       const family = await makeFamily();
-      const ec = await ecService.create(patient.user_id, patient.user_id, {
+      const ec = await createEcFixture(patient.user_id, patient.user_id, {
         relationship: 'spouse',
         first_name: 'A',
         last_name: 'B',
@@ -318,7 +327,7 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
     it('patient-initiated revoke cascades to the baseline grant', async () => {
       const patient = await makePatient();
       const family = await makeFamily();
-      const ec = await ecService.create(patient.user_id, patient.user_id, {
+      const ec = await createEcFixture(patient.user_id, patient.user_id, {
         relationship: 'spouse',
         first_name: 'A',
         last_name: 'B',
@@ -337,7 +346,7 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
     it('family-initiated self-unlink also cascades the baseline grant revoke', async () => {
       const patient = await makePatient();
       const family = await makeFamily();
-      const ec = await ecService.create(patient.user_id, patient.user_id, {
+      const ec = await createEcFixture(patient.user_id, patient.user_id, {
         relationship: 'spouse',
         first_name: 'A',
         last_name: 'B',
@@ -401,7 +410,7 @@ describe('FamilyLinksService (Module 2 §3.4, Faz 1 Slice 3)', () => {
     it('includes the patient\'s display name via the cross-actor patient_profiles read', async () => {
       const patient = await makePatient();
       const family = await makeFamily();
-      const ec = await ecService.create(patient.user_id, patient.user_id, {
+      const ec = await createEcFixture(patient.user_id, patient.user_id, {
         relationship: 'spouse',
         first_name: 'Zeynep',
         last_name: 'Kaya',

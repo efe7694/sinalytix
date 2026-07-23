@@ -67,3 +67,31 @@ export const EmergencyContactPublicSchema = z.object({
   created_at: z.string().datetime(),
 });
 export type EmergencyContactPublic = z.infer<typeof EmergencyContactPublicSchema>;
+
+/**
+ * The result of an emergency-contact mutation that may be gated behind family
+ * approval (FAM-12 `ec_change`).
+ *
+ * A union rather than an optional field, because the two cases are genuinely
+ * different outcomes and a client that forgets to handle the second one
+ * should fail to compile rather than render a blank contact card. `executed:
+ * false` means NOTHING has changed yet — the family has 48 hours to decide
+ * (K4), and the UI must say "waiting for approval", not show the contact as
+ * if it were saved.
+ *
+ * `contact` is null on a gated REMOVE that executed (nothing to return) and
+ * on the deferred branch.
+ */
+export const EmergencyContactMutationResultSchema = z.discriminatedUnion('executed', [
+  z.object({
+    executed: z.literal(true),
+    contact: EmergencyContactPublicSchema.nullable(),
+    approval_id: z.null(),
+  }),
+  z.object({
+    executed: z.literal(false),
+    contact: z.null(),
+    approval_id: z.string().uuid(),
+  }),
+]);
+export type EmergencyContactMutationResult = z.infer<typeof EmergencyContactMutationResultSchema>;

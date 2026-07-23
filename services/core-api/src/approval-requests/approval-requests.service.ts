@@ -11,6 +11,8 @@ import {
 } from '@sinalytix/domain';
 import { KYSELY } from '../common/db.module';
 import { ApiException } from '../common/api.exception';
+import { ApiErrorCode } from '@sinalytix/domain';
+import { ecApplyCreate, ecApplyRemove, ecApplyUpdate, ecNextSortOrder } from '@sinalytix/db';
 import { describeApprovalAction } from '@sinalytix/i18n';
 import type { Locale } from '@sinalytix/i18n';
 
@@ -124,7 +126,11 @@ export class ApprovalRequestsService {
       }
 
       if (decision === 'approved') {
-        await this.executeDeferredAction(trx, decided.action_type, decided.action_payload);
+        // `decided.patient_id` comes from the request row, which only the
+        // patient's own gated action could have created — never from the
+        // approver's session and never from the (client-influenced) payload.
+        // That is what makes the SECURITY DEFINER executors safe to call here.
+        await this.executeDeferredAction(trx, decided.action_type, decided.action_payload, decided.patient_id);
       }
     });
   }
@@ -133,14 +139,74 @@ export class ApprovalRequestsService {
    * executor is a SECURITY DEFINER function that authorizes by the stored
    * requester id (not the approving family member's session), which is what
    * lets a family member's approval carry out a caregiver's action. */
-  private async executeDeferredAction(trx: Kysely<Database>, actionType: string, payload: unknown): Promise<void> {
+  private async executeDeferredAction(
+    trx: Kysely<Database>,
+    actionType: string,
+    payload: unknown,
+    patientId: string,
+  ): Promise<void> {
     if (actionType === ApprovalActionType.CAREGIVER_LINK_CHANGE) {
       const p = payload as { link_id: string; requester_caregiver_id: string };
       await unlinkCaregiverLink(trx, p.link_id, p.requester_caregiver_id);
       return;
     }
-    // family_link_permission_change has no trigger endpoint this slice (its
-    // product semantics await clarification — see DEVIATIONS D14), so no
-    // pending request of that type can exist to reach here.
+
+    if (actionType === ApprovalActionType.EC_CHANGE) {
+      const p = payload as {
+        op: 'create' | 'update' | 'remove';
+        ec_id?: string;
+        relationship?: string | null;
+        first_name?: string | null;
+        last_name?: string | null;
+        phone?: string | null;
+      };
+      if (p.op === 'create') {
+        // The slot is resolved NOW, not at request time: 48 hours of approval
+        // window is plenty of time for the patient to have freed or filled a
+        // different one.
+        const sortOrder = await ecNextSortOrder(trx, patientId);
+        if (sortOrder === null) {
+          throw new ApiException({
+            code: ApiErrorCode.CONFLICT,
+            messageKey: 'ec.max_contacts',
+            messageParams: { max: 3 },
+          });
+        }
+        await ecApplyCreate(trx, {
+          patientId,
+          relationship: p.relationship ?? '',
+          firstName: p.first_name ?? '',
+          lastName: p.last_name ?? '',
+          phone: p.phone ?? '',
+          sortOrder,
+        });
+        return;
+      }
+      if (p.op === 'update' && p.ec_id) {
+        await ecApplyUpdate(trx, {
+          ecId: p.ec_id,
+          patientId,
+          relationship: p.relationship,
+          firstName: p.first_name,
+          lastName: p.last_name,
+          phone: p.phone,
+        });
+        return;
+      }
+      if (p.op === 'remove' && p.ec_id) {
+        // A false return means the contact is already gone — the patient
+        // removed it another way while the request sat pending. Approving a
+        // no-op is the right outcome, not an error: the approver's intent
+        // ("yes, remove it") is satisfied either way.
+        await ecApplyRemove(trx, p.ec_id, patientId);
+        return;
+      }
+      return;
+    }
+
+    // `profile_edit` and `account_delete` are valid config keys (FAM-12 §3)
+    // but have no gated trigger endpoint yet — profile_edit defaults to
+    // ungated, and account deletion is "bilgilendirme" (notify, never block),
+    // so no pending request of either type can reach here.
   }
 }

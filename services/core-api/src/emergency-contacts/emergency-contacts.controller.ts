@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
-import type { EmergencyContactPublic } from '@sinalytix/domain';
+import type { EmergencyContactMutationResult, EmergencyContactPublic } from '@sinalytix/domain';
 import { AuthContextGuard } from '../common/auth-context.guard';
 import { CurrentAuth } from '../common/current-auth.decorator';
 import type { AuthContext } from '../common/auth-context.guard';
@@ -29,7 +29,7 @@ export class EmergencyContactsController {
     @Param('patientId') patientId: string,
     @CurrentAuth() auth: AuthContext,
     @Body(new ZodValidationPipe(CreateEmergencyContactRequestSchema)) body: CreateEmergencyContactRequest,
-  ): Promise<EmergencyContactPublic> {
+  ): Promise<EmergencyContactMutationResult> {
     return this.emergencyContactsService.create(patientId, auth.userId, body);
   }
 
@@ -44,15 +44,22 @@ export class EmergencyContactsController {
     @Param('ecId') ecId: string,
     @CurrentAuth() auth: AuthContext,
     @Body(new ZodValidationPipe(UpdateEmergencyContactRequestSchema)) body: UpdateEmergencyContactRequest,
-  ): Promise<EmergencyContactPublic> {
+  ): Promise<EmergencyContactMutationResult> {
     return this.emergencyContactsService.update(ecId, auth.userId, body);
   }
 
+  // 200, not 204: a removal can be DEFERRED behind family approval
+  // (FAM-12 `ec_change`), and "nothing happened yet, here is the approval id"
+  // is a body-carrying answer. A 204 would make the deferred case
+  // indistinguishable from a completed one.
   @Delete('emergency-contacts/:ecId')
   @UseInterceptors(IdempotencyInterceptor)
-  @HttpCode(204)
-  async remove(@Param('ecId') ecId: string, @CurrentAuth() auth: AuthContext): Promise<void> {
-    await this.emergencyContactsService.remove(ecId, auth.userId);
+  @HttpCode(200)
+  async remove(
+    @Param('ecId') ecId: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<EmergencyContactMutationResult> {
+    return this.emergencyContactsService.remove(ecId, auth.userId);
   }
 
   /** Judgment call (see DEVIATIONS.md): a batch reorder endpoint, not in
