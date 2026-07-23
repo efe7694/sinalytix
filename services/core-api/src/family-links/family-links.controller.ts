@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import type { GenerateFamilyLinkCodeResponse, LinkedPatientSummary, PatientFamilyLinkPublic } from '@sinalytix/domain';
 import { AuthContextGuard } from '../common/auth-context.guard';
 import { CurrentAuth } from '../common/current-auth.decorator';
@@ -7,6 +7,10 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { IdempotencyInterceptor } from '../common/idempotency.interceptor';
 import { FamilyLinksService } from './family-links.service';
 import { RedeemFamilyLinkRequestSchema, type RedeemFamilyLinkRequest } from './dto';
+import {
+  UpdateFamilyLinkPermissionRequestSchema,
+  type UpdateFamilyLinkPermissionRequest,
+} from '@sinalytix/domain';
 
 /** Module 2 §3.4 — PatientFamilyLink + FamilyLinkCode (Faz 1 Slice 3). */
 @Controller()
@@ -52,6 +56,18 @@ export class FamilyLinksController {
   @UseInterceptors(IdempotencyInterceptor)
   async confirm(@Param('linkId') linkId: string, @CurrentAuth() auth: AuthContext): Promise<PatientFamilyLinkPublic> {
     return this.familyLinksService.confirm(linkId, auth.userId);
+  }
+
+  /** FAM-13 permission change. Patient app only, and `full` is K6-gated —
+   * see the service method. */
+  @Patch('family-links/:linkId')
+  @UseInterceptors(IdempotencyInterceptor)
+  async updatePermission(
+    @Param('linkId') linkId: string,
+    @CurrentAuth() auth: AuthContext,
+    @Body(new ZodValidationPipe(UpdateFamilyLinkPermissionRequestSchema)) body: UpdateFamilyLinkPermissionRequest,
+  ): Promise<PatientFamilyLinkPublic> {
+    return this.familyLinksService.updatePermission(linkId, auth.userId, auth.appContext, body.permission_level);
   }
 
   @Post('family-links/:linkId/unlink')

@@ -10,6 +10,8 @@ import { CaregiverLinksService } from '../src/caregiver-links/caregiver-links.se
 import { RedeemRateLimiter } from '../src/common/redeem-rate-limiter.service';
 import { SystemConfigService } from '../src/common/system-config.service';
 import { createUser, setupTestDatabase, truncateAll } from './setup';
+import { APPROVAL_DEFAULT_REQUIRED } from '@sinalytix/domain';
+import { approvalConfigRequiresApproval, withRlsContext } from '@sinalytix/db';
 
 describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', () => {
   let ownerPool: Pool;
@@ -65,10 +67,14 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
   }
 
   // Fixtures seeded via the owner connection (bypasses RLS — setup only).
-  async function seedActiveFamilyLink(patientId: string, familyId: string) {
+  // Default `edit`: FAM-12 §2.3 says only edit/full family may approve, so a
+  // link seeded for the "eligible approver" tests must be edit/full. A
+  // `view`-level link is a DIFFERENT case (not an eligible approver → the K4
+  // deadlock override) and is seeded explicitly where it's under test.
+  async function seedActiveFamilyLink(patientId: string, familyId: string, permissionLevel = 'edit') {
     await ownerDb
       .insertInto('patient_family_links')
-      .values({ patient_id: patientId, family_user_id: familyId, relationship: 'child', status: 'active', source: 'code', linked_at: new Date() })
+      .values({ patient_id: patientId, family_user_id: familyId, relationship: 'child', status: 'active', source: 'code', linked_at: new Date(), permission_level: permissionLevel })
       .execute();
   }
   async function seedLinkedCaregiver(patientId: string, caregiverId: string) {
@@ -116,17 +122,89 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
   });
 
   describe('the gate (via caregiver-initiated unlink)', () => {
-    it('UNGATED: no config → caregiver unlink executes immediately, no request row', async () => {
+    it('no config + no family at all -> runs immediately (nobody could approve)', async () => {
       const patient = await makePatient();
       const caregiver = await makeCaregiver();
       const linkId = await seedLinkedCaregiver(patient.user_id, caregiver.user_id);
 
       const res = await caregiverLinks.unlink(linkId, caregiver.user_id);
       expect(res.executed).toBe(true);
+      expect(await linkStatus(linkId)).toBe('unlinked');
+    });
+
+    it('no config + an eligible family approver -> GATED, because FAM-12 defaults caregiver_link_change to "onay gerekli"', async () => {
+      // Regression for D15/A5. Migration 0014's fallback was `false`, so an
+      // unconfigured patient -- i.e. everyone, since nothing prompts them to
+      // open the setting -- silently had the family safety net switched OFF.
+      const patient = await makePatient();
+      const family = await makeFamily();
+      const caregiver = await makeCaregiver();
+      await seedActiveFamilyLink(patient.user_id, family.user_id);
+      const linkId = await seedLinkedCaregiver(patient.user_id, caregiver.user_id);
+
+      const res = await caregiverLinks.unlink(linkId, caregiver.user_id);
+      expect(res.executed).toBe(false);
+      expect(res.status).toBe('pending');
+      expect(await linkStatus(linkId)).toBe('linked');
+    });
+
+    it('K4 deadlock override: a VIEW-only family member is NOT an eligible approver, so the action runs immediately', async () => {
+      // FAM-12 §2.3 forbids a view-level member from approving; §2512's K4
+      // override then requires the action to run rather than sit pending
+      // forever (a view member's UI has no approve button). The 0014
+      // eligibility functions had no permission_level filter, so a view-only
+      // family made the gate DEFER — the exact deadlock K4 forbids. Independent
+      // review finding; fixed in migration 0019.
+      const patient = await makePatient();
+      const family = await makeFamily();
+      const caregiver = await makeCaregiver();
+      await seedActiveFamilyLink(patient.user_id, family.user_id, 'view');
+      const linkId = await seedLinkedCaregiver(patient.user_id, caregiver.user_id);
+
+      const res = await caregiverLinks.unlink(linkId, caregiver.user_id);
+      expect(res.executed).toBe(true);
+      expect(res.status).toBe('auto_approved_no_approver');
+      expect(await linkStatus(linkId)).toBe('unlinked');
+    });
+
+    it('SECURITY: a view-only family member cannot approve a pending request via a direct decide() call', async () => {
+      // The other half of the same bug: even if a request is pending (because
+      // an edit/full member exists), a view-level member calling the decide
+      // endpoint directly must be refused — it is substitute-decision
+      // authority K6/FAM-13 withholds from them.
+      const patient = await makePatient();
+      const approver = await makeFamily('Editor');
+      const viewer = await makeFamily('Viewer');
+      const caregiver = await makeCaregiver();
+      await seedActiveFamilyLink(patient.user_id, approver.user_id, 'edit');
+      await seedActiveFamilyLink(patient.user_id, viewer.user_id, 'view');
+      const linkId = await seedLinkedCaregiver(patient.user_id, caregiver.user_id);
+      const res = await caregiverLinks.unlink(linkId, caregiver.user_id);
+      expect(res.status).toBe('pending');
+
+      await expect(approvals.decide(res.approval_id as string, viewer.user_id, 'approved')).rejects.toMatchObject({
+        status: 403,
+      });
+      // The edit-level member still can.
+      await approvals.decide(res.approval_id as string, approver.user_id, 'approved');
+      expect(await linkStatus(linkId)).toBe('unlinked');
+    });
+
+    it('an explicit opt-out turns the gate off (K4: the toggle belongs to the patient)', async () => {
+      const patient = await makePatient();
+      const family = await makeFamily();
+      const caregiver = await makeCaregiver();
+      await seedActiveFamilyLink(patient.user_id, family.user_id);
+      await approvals.upsertConfig(patient.user_id, patient.user_id, {
+        action_type: 'caregiver_link_change',
+        requires_approval: false,
+      });
+      const linkId = await seedLinkedCaregiver(patient.user_id, caregiver.user_id);
+
+      const res = await caregiverLinks.unlink(linkId, caregiver.user_id);
+      expect(res.executed).toBe(true);
       expect(res.approval_id).toBeNull();
       expect(await linkStatus(linkId)).toBe('unlinked');
-      const reqs = await approvals.listForPatient(patient.user_id, patient.user_id);
-      expect(reqs).toHaveLength(0);
     });
 
     it('GATED with an eligible family approver: caregiver unlink is DEFERRED (pending), link stays linked', async () => {
@@ -172,7 +250,11 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
       expect(await linkStatus(linkId)).toBe('unlinked'); // the real side effect happened
     });
 
-    it('PATIENT-initiated unlink is never gated (runs immediately even when config requires approval)', async () => {
+    it("PATIENT-initiated unlink is ALSO gated -- that is FAM-12's headline case", async () => {
+      // D15/A5: Faz 1 gated only the caregiver-initiated direction and let the
+      // patient's own unlink through. FAM-12 section 3 names the opposite
+      // explicitly ("Hasta ... mevcut bakiciyi cikariyor"), which is the whole
+      // point of the family safety net in the dementia scenario.
       const patient = await makePatient();
       const family = await makeFamily();
       const caregiver = await makeCaregiver();
@@ -181,7 +263,22 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
       const linkId = await seedLinkedCaregiver(patient.user_id, caregiver.user_id);
 
       const res = await caregiverLinks.unlink(linkId, patient.user_id);
+      expect(res.executed).toBe(false);
+      expect(res.status).toBe('pending');
+      expect(await linkStatus(linkId)).toBe('linked');
+    });
+
+    it('a patient with NO eligible family approver is never blocked (K4 deadlock override)', async () => {
+      // The PHIPA guard rail: a capable patient's own decision may be
+      // supervised, never permanently prevented.
+      const patient = await makePatient();
+      const caregiver = await makeCaregiver();
+      await requireApproval(patient.user_id);
+      const linkId = await seedLinkedCaregiver(patient.user_id, caregiver.user_id);
+
+      const res = await caregiverLinks.unlink(linkId, patient.user_id);
       expect(res.executed).toBe(true);
+      expect(res.status).toBe('auto_approved_no_approver');
       expect(await linkStatus(linkId)).toBe('unlinked');
     });
   });
@@ -264,6 +361,33 @@ describe('ApprovalRequests + PatientApprovalConfig (Module 3, Faz 1 Slice 5)', (
 
       const asStranger = await approvals.listForPatient(patient.user_id, stranger.user_id);
       expect(asStranger).toHaveLength(0); // RLS hides it
+    });
+  });
+
+  describe('per-action defaults match FAM-12 §3 (D15 item A5)', () => {
+    // The constant in @sinalytix/domain and the SQL fallback in migration
+    // 0016 are two copies of the same table. Asserted against the DB function
+    // itself rather than by diffing files, so what's checked is the behavior
+    // the gate actually gets.
+    it.each(Object.entries(APPROVAL_DEFAULT_REQUIRED))(
+      '%s → unconfigured default is %s',
+      async (actionType, expected) => {
+        const patient = await makePatient();
+        const actual = await withRlsContext(appDb, { actingUserId: patient.user_id }, (trx) =>
+          approvalConfigRequiresApproval(trx, patient.user_id, actionType),
+        );
+        expect(actual).toBe(expected);
+      },
+    );
+
+    it('rejects an action_type outside the FAM-12 set at the DB layer', async () => {
+      const patient = await makePatient();
+      await expect(
+        ownerDb
+          .insertInto('patient_approval_configs')
+          .values({ patient_id: patient.user_id, action_type: 'family_link_permission_change', requires_approval: true })
+          .execute(),
+      ).rejects.toThrow();
     });
   });
 });

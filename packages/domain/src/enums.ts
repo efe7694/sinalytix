@@ -204,13 +204,48 @@ export type CaregiverLinkStatus = (typeof CaregiverLinkStatus)[keyof typeof Care
 
 // ── ApprovalRequest / PatientApprovalConfig (Faz 1 Slice 5, Module 3) ─────
 
-/** The sensitive actions a patient can require family approval for. Kept to
- * exactly two in Faz 1 (a judgment call — see DEVIATIONS D14). */
+/**
+ * The actions a patient can require family approval for — Modül 1 §9 +
+ * Family PRD FAM-12 §3, realigned in Faz 1.5 Slice 4 (D15 item A5).
+ *
+ * Faz 1 shipped `family_link_permission_change` here, which appears in
+ * NEITHER source; D14 had already flagged it as a type with no pinned-down
+ * semantics and no trigger endpoint. Removed rather than given one.
+ *
+ * FAM-12 §3 also fixes the per-type default (see
+ * `APPROVAL_DEFAULT_REQUIRED`) — it is not uniform.
+ */
 export const ApprovalActionType = {
+  /** Patient adds/removes a caregiver. Default: approval required. */
   CAREGIVER_LINK_CHANGE: 'caregiver_link_change',
-  FAMILY_LINK_PERMISSION_CHANGE: 'family_link_permission_change',
+  /** Emergency-contact add/edit/remove. Default: approval required — this is
+   * who the SOS chain dials, so a silent change is a safety event. */
+  EC_CHANGE: 'ec_change',
+  /** Profile edit by an authorized family member. Default: NOT gated
+   * ("yetki var ise doğrudan") — a valid config key a patient may switch on,
+   * not something the product forces. */
+  PROFILE_EDIT: 'profile_edit',
+  /** Account deletion. FAM-12: "Bilgilendirme" — family is NOTIFIED, approval
+   * is never mandatory, because deleting one's own account is the patient's
+   * right (PIPEDA). Present as a config key; the notification path belongs to
+   * the AccountDeletionRequest phase. */
+  ACCOUNT_DELETE: 'account_delete',
 } as const;
 export type ApprovalActionType = (typeof ApprovalActionType)[keyof typeof ApprovalActionType];
+
+/**
+ * FAM-12 §3 "Varsayılan" column. Mirrors migration 0016's
+ * `approval_config_requires_approval` fallback — the DB is authoritative (the
+ * gate reads it through SECURITY DEFINER); this exists so a client can render
+ * the settings screen's initial state without a round trip, and so the two
+ * can be diffed in a test rather than drifting.
+ */
+export const APPROVAL_DEFAULT_REQUIRED: Record<ApprovalActionType, boolean> = {
+  caregiver_link_change: true,
+  ec_change: true,
+  profile_edit: false,
+  account_delete: false,
+};
 
 export const ApprovalStatus = {
   PENDING: 'pending',

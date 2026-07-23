@@ -255,6 +255,21 @@ export const ERROR_MESSAGES = {
     fr: 'Seule la personne accompagnée peut confirmer cette connexion.',
     tr: 'Bu bağlantıyı yalnız bakım alan kişi onaylayabilir.',
   },
+  'link.permission_patient_app_only': {
+    en: 'Access levels can only be changed by the person being cared for, from their own app.',
+    fr: "Les niveaux d'accès ne peuvent être modifiés que par la personne accompagnée, depuis sa propre application.",
+    tr: 'Erişim düzeyi yalnız bakım alan kişi tarafından, kendi uygulamasından değiştirilebilir.',
+  },
+  'link.permission_full_requires_sdm': {
+    en: 'Full access can only be given to a declared substitute decision-maker. The highest level available otherwise is “edit”.',
+    fr: "L'accès complet ne peut être accordé qu'à un mandataire spécial déclaré. Sinon, le niveau maximal est « modification ».",
+    tr: 'Tam erişim yalnız beyan edilmiş vekil karar vericiye verilebilir. Aksi hâlde en yüksek düzey “düzenleme”dir.',
+  },
+  'link.permission_link_not_active': {
+    en: 'This connection is not active, so its access level cannot be changed.',
+    fr: "Cette connexion n'est pas active ; son niveau d'accès ne peut pas être modifié.",
+    tr: 'Bu bağlantı aktif değil, erişim düzeyi değiştirilemez.',
+  },
   'link.already_decided': {
     en: 'This connection has already been confirmed or cancelled.',
     fr: 'Cette connexion a déjà été confirmée ou annulée.',

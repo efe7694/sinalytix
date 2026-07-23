@@ -174,40 +174,49 @@ export class CaregiverLinksService {
         }
       };
 
-      if (link.caregiver_id === actingUserId) {
-        // Reject a duplicate: if this caregiver already has a pending unlink
-        // request for THIS link, don't create a second one (the partial index
-        // is a non-unique lookup index; the target link_id lives in the jsonb
-        // payload, so dedup is enforced here, not by a constraint). The
-        // caregiver can read their own requests via RLS (requested_by = actor).
-        const existingPending = await trx
-          .selectFrom('approval_requests')
-          .select('approval_id')
-          .where('requested_by', '=', actingUserId)
-          .where('action_type', '=', ApprovalActionType.CAREGIVER_LINK_CHANGE)
-          .where('status', '=', ApprovalStatus.PENDING)
-          .where(sql<boolean>`action_payload->>'link_id' = ${linkId}`)
-          .executeTakeFirst();
-        if (existingPending) {
-          throw ApiException.conflict('link.caregiver_approval_pending');
-        }
+      // FAM-12 §3 gates "bakıcı bağlantısı değişikliği" and names the
+      // patient-initiated case explicitly ("Hasta ... mevcut bakıcıyı
+      // çıkarıyor") — that IS the family safety net for the dementia
+      // scenario the queue exists for. Faz 1 Slice 5 gated only the
+      // caregiver-initiated direction and let the patient's own unlink
+      // through ungated, i.e. exactly backwards from the spec's headline
+      // case (D15 item A5). Both directions are gated now.
+      //
+      // This cannot trap a patient: with no eligible `edit`/`full` family
+      // approver the gate runs the action immediately and records
+      // `auto_approved_no_approver` (K4 deadlock override, PHIPA — a capable
+      // patient's decision is never permanently blocked), and the patient can
+      // switch the whole gate off in their own approval config.
+      const isCaregiverInitiated = link.caregiver_id === actingUserId;
 
-        // Caregiver-initiated → gate. The stored payload carries the caregiver
-        // id so an approving family member's decision can re-run the unlink
-        // (via the SECURITY DEFINER function) as the caregiver.
-        return this.approvalGate.maybeGate(trx, {
-          patientId: link.patient_id,
-          actionType: ApprovalActionType.CAREGIVER_LINK_CHANGE,
-          actionPayload: { link_id: linkId, requester_caregiver_id: actingUserId },
-          requesterId: actingUserId,
-          requesterRole: RequestedByRole.CAREGIVER,
-          executeAction: runUnlink,
-        });
+      // Reject a duplicate: if this actor already has a pending unlink
+      // request for THIS link, don't create a second one (the partial index
+      // is a non-unique lookup index; the target link_id lives in the jsonb
+      // payload, so dedup is enforced here, not by a constraint). Both
+      // parties can read their own requests via RLS (requested_by = actor).
+      const existingPending = await trx
+        .selectFrom('approval_requests')
+        .select('approval_id')
+        .where('requested_by', '=', actingUserId)
+        .where('action_type', '=', ApprovalActionType.CAREGIVER_LINK_CHANGE)
+        .where('status', '=', ApprovalStatus.PENDING)
+        .where(sql<boolean>`action_payload->>'link_id' = ${linkId}`)
+        .executeTakeFirst();
+      if (existingPending) {
+        throw ApiException.conflict('link.caregiver_approval_pending');
       }
 
-      // Patient-initiated → immediate, never gated.
-      await runUnlink();
-      return { executed: true, status: ApprovalStatus.APPROVED, approval_id: null };
+      // The payload carries the ORIGINAL requester so an approving family
+      // member's decision re-runs the unlink as them (via the SECURITY
+      // DEFINER function), not as the approver — see D14.
+      return this.approvalGate.maybeGate(trx, {
+        patientId: link.patient_id,
+        actionType: ApprovalActionType.CAREGIVER_LINK_CHANGE,
+        actionPayload: { link_id: linkId, requester_caregiver_id: actingUserId },
+        requesterId: actingUserId,
+        requesterRole: isCaregiverInitiated ? RequestedByRole.CAREGIVER : RequestedByRole.PATIENT,
+        executeAction: runUnlink,
+      });
     });
   }
 
