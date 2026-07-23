@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod';
+import { E164PhoneSchema } from './user';
 
 export const InviteStatus = {
   PENDING: 'pending',
@@ -18,7 +19,7 @@ export const CreateEmergencyContactRequestSchema = z.object({
   relationship: z.string().min(1),
   first_name: z.string().min(1),
   last_name: z.string().min(1),
-  phone: z.string().regex(/^\+\d{8,15}$/, 'E.164 formatında olmalı (ör. +14165550100)'),
+  phone: E164PhoneSchema,
 });
 export type CreateEmergencyContactRequest = z.infer<typeof CreateEmergencyContactRequestSchema>;
 
@@ -27,7 +28,7 @@ export const UpdateEmergencyContactRequestSchema = z
     relationship: z.string().min(1),
     first_name: z.string().min(1),
     last_name: z.string().min(1),
-    phone: z.string().regex(/^\+\d{8,15}$/, 'E.164 formatında olmalı (ör. +14165550100)'),
+    phone: E164PhoneSchema,
   })
   .partial();
 export type UpdateEmergencyContactRequest = z.infer<typeof UpdateEmergencyContactRequestSchema>;

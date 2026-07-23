@@ -10,7 +10,7 @@ import type { Pool } from 'pg';
 import { authenticator } from 'otplib';
 import Redis from 'ioredis';
 import { AppModule } from '../src/app.module';
-import { ProblemDetailsFilter } from '../src/common/problem-details.filter';
+import { ApiErrorFilter } from '../src/common/api-error.filter';
 import { createUser, setupTestDatabase, truncateAll } from './setup';
 
 async function inject(app: NestFastifyApplication, opts: Parameters<ReturnType<NestFastifyApplication['getHttpAdapter']>['getInstance']['inject']>[0]) {
@@ -31,7 +31,7 @@ describe('Faz 0 auth flows (Module 2 §3.1)', () => {
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
-    app.useGlobalFilters(new ProblemDetailsFilter());
+    app.useGlobalFilters(new ApiErrorFilter());
     app.setGlobalPrefix('v1');
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
@@ -79,7 +79,7 @@ describe('Faz 0 auth flows (Module 2 §3.1)', () => {
     expect(body.profile.timezone_iana).toBe('America/Toronto');
   });
 
-  it('rejects a request whose X-App-Context does not match the session (Module 2 §1.3)', async () => {
+  it('rejects a request whose X-App-Context does not match the session (Modül 2 §1.2)', async () => {
     const auth = await otpSignup('+14165551001');
     const res = await inject(app, {
       method: 'GET',
@@ -88,8 +88,10 @@ describe('Faz 0 auth flows (Module 2 §3.1)', () => {
     });
     expect(res.statusCode).toBe(403);
     const body = JSON.parse(res.body);
-    expect(body.type).toContain('/errors/');
-    expect(body.trace_id).toBeTruthy();
+    // Its OWN code, not a generic PERMISSION_DENIED: the client's correct
+    // reaction is "sign in from the right app", not "you lack permission".
+    expect(body.error.code).toBe('APP_CONTEXT_MISMATCH');
+    expect(body.error.request_id).toBeTruthy();
   });
 
   it('refresh rotates the token; reusing the old refresh_token revokes the session (replay detection, Module 1 §3.5)', async () => {
@@ -191,7 +193,7 @@ describe('Faz 0 auth flows (Module 2 §3.1)', () => {
     expect(completed.session.app_context).toBe('hcp');
   });
 
-  it('returns RFC 7807 problem+json on validation failure', async () => {
+  it('returns the canonical error envelope (Modül 2 §1.3) on a bad request', async () => {
     const res = await inject(app, {
       method: 'POST',
       url: '/v1/auth/signup',
@@ -199,9 +201,13 @@ describe('Faz 0 auth flows (Module 2 §3.1)', () => {
     });
     expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.body);
-    expect(body.type).toBeTruthy();
-    expect(body.title).toBeTruthy();
-    expect(body.status).toBe(400);
-    expect(body.trace_id).toBeTruthy();
+    expect(body.error.code).toBe('BAD_REQUEST');
+    expect(body.error.message).toBeTruthy();
+    expect(body.error.request_id).toBeTruthy();
+    // The RFC 7807 fields are GONE, not merely supplemented — the product
+    // owner chose a full migration over carrying two contracts (D15/B1).
+    expect(body.type).toBeUndefined();
+    expect(body.title).toBeUndefined();
+    expect(body.trace_id).toBeUndefined();
   });
 });

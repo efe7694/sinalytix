@@ -14,7 +14,7 @@ import {
 } from '@sinalytix/domain';
 import { isLockboxCategory } from '@sinalytix/policy-engine';
 import { KYSELY } from '../common/db.module';
-import { ProblemException } from '../common/problem.exception';
+import { ApiException } from '../common/api.exception';
 import { buildPaginatedResponse, decodeCursor } from '../common/cursor-pagination';
 
 function toConsentGrantPublic(row: {
@@ -55,7 +55,7 @@ export class ConsentGrantsService {
    * flow — Faz 1 Slice 3), never directly via this endpoint. */
   async create(patientId: string, actingUserId: string, body: CreateConsentGrantRequest): Promise<ConsentGrantPublic> {
     if (body.granted_to_kind === GrantedToKind.FAMILY_MEMBER) {
-      throw ProblemException.conflict('family_member türünde grant yalnız sistem tarafından oluşturulur.');
+      throw ApiException.conflict('consent.family_grant_system_only');
     }
 
     return withRlsContext(this.db, { actingUserId }, async (trx) => {
@@ -127,10 +127,10 @@ export class ConsentGrantsService {
         .where('grant_id', '=', grantId)
         .executeTakeFirst();
       if (!existing) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
       if (existing.revoked_at) {
-        throw ProblemException.conflict('Grant zaten iptal edilmiş.');
+        throw ApiException.conflict('consent.grant_already_revoked');
       }
 
       const revokedAt = new Date();
@@ -143,7 +143,7 @@ export class ConsentGrantsService {
       if (!updated) {
         // RLS silently dropped the UPDATE (not the patient, not an active SDM) —
         // varlık-sızdırmaz: same 404 as "doesn't exist", not a 403.
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
       return { grant_id: updated.grant_id, revoked_at: revokedAt.toISOString() };
     });
@@ -214,7 +214,7 @@ export class ConsentGrantsService {
     body: CreateSdmDeclarationRequest,
   ): Promise<SdmDeclarationPublic> {
     if (!roles.includes('clinician') && !roles.includes('nurse')) {
-      throw ProblemException.forbidden('SDM beyanı yalnız klinisyen/hemşire tarafından oluşturulabilir.');
+      throw ApiException.permissionDenied('consent.sdm_clinician_only');
     }
 
     return withRlsContext(this.db, { actingUserId, actingRoles: roles }, async (trx) => {
@@ -225,7 +225,7 @@ export class ConsentGrantsService {
         .where('sdm_user_id', '=', body.sdm_user_id)
         .executeTakeFirst();
       if (existing) {
-        throw ProblemException.conflict('Bu hasta-SDM çifti için zaten bir beyan var.');
+        throw ApiException.conflict('consent.sdm_duplicate');
       }
 
       const row = await trx
@@ -304,7 +304,7 @@ export class ConsentGrantsService {
       .where('active', '=', true)
       .executeTakeFirst();
     if (!activeSdm) {
-      throw ProblemException.forbidden('Bu hasta adına yalnız hasta veya aktif SDM işlem yapabilir.');
+      throw ApiException.permissionDenied('consent.patient_or_sdm_only');
     }
   }
 }

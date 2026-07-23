@@ -19,7 +19,7 @@ import {
   type RedeemCaregiverLinkRequest,
 } from '@sinalytix/domain';
 import { KYSELY } from '../common/db.module';
-import { ProblemException } from '../common/problem.exception';
+import { ApiException } from '../common/api.exception';
 import { randomToken } from '../common/hash.util';
 import { RedeemRateLimiter } from '../common/redeem-rate-limiter.service';
 import { ApprovalGateService } from '../approval-requests/approval-gate.service';
@@ -87,7 +87,7 @@ export class CaregiverLinksService {
         .where('status', '=', CaregiverLinkStatus.PENDING)
         .executeTakeFirst();
       if (Number(result.numUpdatedRows) === 0) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
     });
   }
@@ -115,7 +115,7 @@ export class CaregiverLinksService {
         .where('status', '=', CaregiverLinkStatus.LINKED)
         .executeTakeFirst();
       if (existing) {
-        throw ProblemException.conflict('Bu hastayla zaten bağlısınız.');
+        throw ApiException.conflict('link.caregiver_already_linked');
       }
 
       const redeemed = await redeemCaregiverLink(trx, found.link_id, actingUserId);
@@ -164,13 +164,13 @@ export class CaregiverLinksService {
         .where('link_id', '=', linkId)
         .executeTakeFirst();
       if (!link || link.status !== CaregiverLinkStatus.LINKED) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
 
       const runUnlink = async (): Promise<void> => {
         const result = await unlinkCaregiverLink(trx, linkId, actingUserId);
         if (!result) {
-          throw ProblemException.notFound();
+          throw ApiException.notFound();
         }
       };
 
@@ -189,7 +189,7 @@ export class CaregiverLinksService {
           .where(sql<boolean>`action_payload->>'link_id' = ${linkId}`)
           .executeTakeFirst();
         if (existingPending) {
-          throw ProblemException.conflict('Bu bağlantı için zaten bekleyen bir onay talebi var.');
+          throw ApiException.conflict('link.caregiver_approval_pending');
         }
 
         // Caregiver-initiated → gate. The stored payload carries the caregiver

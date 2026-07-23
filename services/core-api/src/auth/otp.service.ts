@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS } from '../common/redis.module';
 import { randomOtpCode, sha256Hex } from '../common/hash.util';
-import { ProblemException } from '../common/problem.exception';
+import { ApiException } from '../common/api.exception';
 
 const CODE_TTL_SECONDS = 5 * 60;
 const REQUEST_LIMIT = 5;
@@ -37,7 +37,7 @@ export class OtpService {
       await this.redis.expire(requestCountKey(phoneHash), REQUEST_WINDOW_SECONDS);
     }
     if (requests > REQUEST_LIMIT) {
-      throw ProblemException.tooManyRequests('Çok fazla kod isteği. Lütfen daha sonra tekrar deneyin.');
+      throw ApiException.rateLimited('auth.otp_too_many_requests');
     }
 
     const code = randomOtpCode();
@@ -54,7 +54,7 @@ export class OtpService {
 
     const locked = await this.redis.get(lockoutKey(phoneHash));
     if (locked) {
-      throw ProblemException.tooManyRequests('Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.');
+      throw ApiException.rateLimited('auth.otp_too_many_attempts', VERIFY_LOCKOUT_SECONDS, { minutes: VERIFY_LOCKOUT_SECONDS / 60 });
     }
 
     const stored = await this.redis.get(codeKey(phoneHash));

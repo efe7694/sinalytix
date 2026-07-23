@@ -13,7 +13,7 @@ import {
   type RedeemFamilyLinkRequest,
 } from '@sinalytix/domain';
 import { KYSELY } from '../common/db.module';
-import { ProblemException } from '../common/problem.exception';
+import { ApiException } from '../common/api.exception';
 import { randomOtpCode, randomToken } from '../common/hash.util';
 import { RedeemRateLimiter } from '../common/redeem-rate-limiter.service';
 import { ConsentGrantsService } from '../consent-grants/consent-grants.service';
@@ -120,7 +120,7 @@ export class FamilyLinksService {
         .where('source', 'in', ['code', 'qr'])
         .executeTakeFirst();
       if (Number(result.numUpdatedRows) === 0) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
     });
   }
@@ -144,7 +144,7 @@ export class FamilyLinksService {
         .where('deleted_at', 'is', null)
         .executeTakeFirst();
       if (!ec) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
       const patientId = ec.patient_id;
 
@@ -218,7 +218,7 @@ export class FamilyLinksService {
 
       const source = codeRow.source === FamilyLinkSource.EC_INVITE ? FamilyLinkSource.EC_INVITE : matchedSource;
       if (source !== FamilyLinkSource.EC_INVITE && !body.relationship) {
-        throw ProblemException.badRequest('relationship alanı zorunludur.');
+        throw ApiException.badRequest('link.family_relationship_required');
       }
 
       const existingLink = await trx
@@ -229,7 +229,7 @@ export class FamilyLinksService {
         .where('status', '!=', FamilyLinkStatus.REVOKED)
         .executeTakeFirst();
       if (existingLink) {
-        throw ProblemException.conflict('Bu hastayla zaten bir bağlantınız var.');
+        throw ApiException.conflict('link.family_already_linked');
       }
 
       const redeemedCode = await redeemFamilyLinkCode(trx, codeRow.link_code_id, actingUserId, source);
@@ -253,7 +253,7 @@ export class FamilyLinksService {
         // into this EC row at all (emergency_contacts_family_select
         // requires an already-active link) — see that migration's comment.
         if (redeemedCode.ec_relationship === null) {
-          throw ProblemException.conflict('Davet artık geçerli değil.');
+          throw ApiException.conflict('link.invite_no_longer_valid');
         }
         relationship = redeemedCode.ec_relationship;
       }
@@ -306,13 +306,13 @@ export class FamilyLinksService {
       // gets, losing information the API contract is meant to expose.
       const link = await trx.selectFrom('patient_family_links').selectAll().where('link_id', '=', linkId).executeTakeFirst();
       if (!link) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
       if (link.patient_id !== actingUserId) {
-        throw ProblemException.forbidden('Bu bağlantıyı yalnız hasta onaylayabilir.');
+        throw ApiException.permissionDenied('link.confirm_patient_only');
       }
       if (link.status !== FamilyLinkStatus.PENDING_PATIENT_CONFIRM) {
-        throw ProblemException.conflict('Bu bağlantı zaten onaylanmış veya iptal edilmiş.');
+        throw ApiException.conflict('link.already_decided');
       }
 
       const updated = await trx
@@ -346,7 +346,7 @@ export class FamilyLinksService {
         .where(({ eb, or }) => or([eb('patient_id', '=', actingUserId), eb('family_user_id', '=', actingUserId)]))
         .executeTakeFirst();
       if (!link || link.status === FamilyLinkStatus.REVOKED) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
 
       await trx

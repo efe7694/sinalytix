@@ -10,7 +10,7 @@ import {
   type UpdateApprovalConfigRequest,
 } from '@sinalytix/domain';
 import { KYSELY } from '../common/db.module';
-import { ProblemException } from '../common/problem.exception';
+import { ApiException } from '../common/api.exception';
 
 /** Human-readable descriptions for the family approvals screen, computed from
  * action_type + payload so the 3 apps don't each reimplement a mapper. */
@@ -38,7 +38,7 @@ export class ApprovalRequestsService {
   ): Promise<PatientApprovalConfigPublic> {
     if (patientId !== actingUserId) {
       // Owner-only, independent of RLS (approval config is the patient's own).
-      throw ProblemException.forbidden('Yalnız hasta kendi onay ayarlarını değiştirebilir.');
+      throw ApiException.permissionDenied('approval.config_patient_only');
     }
     return withRlsContext(this.db, { actingUserId }, async (trx) => {
       const row = await trx
@@ -59,7 +59,7 @@ export class ApprovalRequestsService {
 
   async listConfig(patientId: string, actingUserId: string): Promise<PatientApprovalConfigPublic[]> {
     if (patientId !== actingUserId) {
-      throw ProblemException.forbidden('Yalnız hasta kendi onay ayarlarını görüntüleyebilir.');
+      throw ApiException.permissionDenied('approval.config_view_patient_only');
     }
     return withRlsContext(this.db, { actingUserId }, async (trx) => {
       const rows = await trx.selectFrom('patient_approval_configs').selectAll().where('patient_id', '=', patientId).execute();
@@ -115,23 +115,23 @@ export class ApprovalRequestsService {
         .where('approval_id', '=', approvalId)
         .executeTakeFirst();
       if (!req) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
       if (req.requested_by === actingUserId) {
-        throw ProblemException.forbidden('Kendi talebinizi onaylayamazsınız.');
+        throw ApiException.permissionDenied('approval.cannot_approve_own');
       }
       if (req.status !== ApprovalStatus.PENDING) {
-        throw ProblemException.conflict('Bu talep zaten karara bağlanmış.');
+        throw ApiException.conflict('approval.already_decided');
       }
       if (req.expires_at.getTime() < Date.now()) {
-        throw ProblemException.conflict('Bu talebin süresi dolmuş.');
+        throw ApiException.conflict('approval.expired');
       }
 
       const decided = await approvalRequestDecide(trx, approvalId, actingUserId, decision);
       if (!decided) {
         // Visible (RLS) but not an eligible approver — an active family member
         // is required. Distinct from the not-found case above.
-        throw ProblemException.forbidden('Bu talebi yalnız hastanın aktif aile üyesi karara bağlayabilir.');
+        throw ApiException.permissionDenied('approval.decider_must_be_active_family');
       }
 
       if (decision === 'approved') {

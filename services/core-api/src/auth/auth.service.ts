@@ -27,7 +27,7 @@ import {
 } from '@sinalytix/domain';
 import { writeAuditLog } from '@sinalytix/audit';
 import { KYSELY } from '../common/db.module';
-import { ProblemException } from '../common/problem.exception';
+import { ApiException } from '../common/api.exception';
 import { randomToken, sha256Hex } from '../common/hash.util';
 import { ColumnEncryptionService } from '../common/encryption.util';
 import { TokenService } from './token.service';
@@ -166,24 +166,24 @@ export class AuthService {
       return this.signupEmailPassword(req, meta);
     }
     if (req.auth_method === AuthMethod.APPLE_SSO || req.auth_method === AuthMethod.GOOGLE_SSO) {
-      if (!req.id_token) throw ProblemException.badRequest('id_token zorunlu.');
+      if (!req.id_token) throw ApiException.badRequest('auth.id_token_required');
       return this.ssoAuth(req.auth_method, req.id_token, req.app_context, meta);
     }
-    throw ProblemException.badRequest('phone_otp icin /auth/otp/request ve /auth/otp/verify kullanin.');
+    throw ApiException.badRequest('auth.use_otp_endpoints');
   }
 
   private async signupEmailPassword(req: SignupRequest, meta: RequestMeta): Promise<AuthResult> {
     if (req.app_context !== AppContext.HCP) {
-      throw ProblemException.badRequest('email_password yalnız HCP uygulaması için kullanılabilir.');
+      throw ApiException.badRequest('auth.email_password_hcp_only');
     }
     if (!req.email || !req.password) {
-      throw ProblemException.badRequest('email ve password zorunlu.');
+      throw ApiException.badRequest('auth.email_password_required');
     }
 
     return withRlsContext(this.db, {}, async (trx) => {
       const existing = await findUserByEmail(trx, req.email as string);
       if (existing) {
-        throw ProblemException.conflict('Bu e-posta zaten kayıtlı.');
+        throw ApiException.conflict('auth.email_already_registered');
       }
       const passwordHash = await this.passwordService.hash(req.password as string);
       // user_id generated client-side and the RLS var set *before* insert:
@@ -296,17 +296,17 @@ export class AuthService {
 
   async login(req: LoginRequest, meta: RequestMeta): Promise<AuthResult> {
     if (req.auth_method === AuthMethod.APPLE_SSO || req.auth_method === AuthMethod.GOOGLE_SSO) {
-      if (!req.id_token) throw ProblemException.badRequest('id_token zorunlu.');
+      if (!req.id_token) throw ApiException.badRequest('auth.id_token_required');
       return this.ssoAuth(req.auth_method, req.id_token, req.app_context, meta);
     }
 
     if (!req.email || !req.password) {
-      throw ProblemException.badRequest('email ve password zorunlu.');
+      throw ApiException.badRequest('auth.email_password_required');
     }
     return withRlsContext(this.db, {}, async (trx) => {
       const found = await findUserByEmail(trx, req.email as string);
       if (!found || !found.password_hash || !(await this.passwordService.verify(found.password_hash, req.password as string))) {
-        throw ProblemException.unauthorized('E-posta veya şifre hatalı.');
+        throw ApiException.unauthenticated('auth.invalid_credentials');
       }
 
       // Credentials verified — set acting_user_id now so the totp_secrets
@@ -366,7 +366,7 @@ export class AuthService {
   async verifyOtp(phoneE164: string, code: string, appContext: string, meta: RequestMeta): Promise<AuthResult> {
     const ok = await this.otpService.verifyCode(phoneE164, code);
     if (!ok) {
-      throw ProblemException.unauthorized('Kod geçersiz veya süresi dolmuş.');
+      throw ApiException.unauthenticated('auth.code_invalid_or_expired');
     }
 
     return withRlsContext(this.db, {}, async (trx) => {
@@ -449,10 +449,10 @@ export class AuthService {
         .select(['secret_encrypted'])
         .where('user_id', '=', userId)
         .executeTakeFirst();
-      if (!row) throw ProblemException.badRequest('Önce TOTP kaydı başlatılmalı.');
+      if (!row) throw ApiException.badRequest('auth.totp_enroll_first');
       const secret = this.encryptionService.decrypt(row.secret_encrypted);
       if (!this.totpService.verify(secret, code)) {
-        throw ProblemException.unauthorized('Kod geçersiz.');
+        throw ApiException.unauthenticated('auth.code_invalid');
       }
       await trx.updateTable('totp_secrets').set({ confirmed_at: new Date() }).where('user_id', '=', userId).execute();
     });
@@ -461,7 +461,7 @@ export class AuthService {
   async completeMfaLogin(mfaToken: string, code: string, meta: RequestMeta): Promise<AuthResult> {
     const payload = this.tokenService.verifyAccessToken(mfaToken);
     if (!payload || payload.session_id !== 'mfa-pending') {
-      throw ProblemException.unauthorized('mfa_token geçersiz veya süresi dolmuş.');
+      throw ApiException.unauthenticated('auth.mfa_token_invalid');
     }
     return withRlsContext(this.db, { actingUserId: payload.sub }, async (trx) => {
       const row = await trx
@@ -475,7 +475,7 @@ export class AuthService {
         .where('user_id', '=', payload.sub)
         .executeTakeFirstOrThrow();
       if (!row || !this.totpService.verify(this.encryptionService.decrypt(row.secret_encrypted), code)) {
-        throw ProblemException.unauthorized('Kod geçersiz.');
+        throw ApiException.unauthenticated('auth.code_invalid');
       }
       const issued = await this.issueSession(trx, { userId: payload.sub, roles: user.roles, appContext: payload.app_context, meta });
       await writeAuditLog(trx, {
@@ -507,7 +507,7 @@ export class AuthService {
     const tokenHash = sha256Hex(refreshTokenRaw);
     const found = await findRefreshTokenByHash(this.db, tokenHash);
     if (!found) {
-      throw ProblemException.unauthorized('refresh_token geçersiz.');
+      throw ApiException.unauthenticated('auth.refresh_token_invalid');
     }
     if (found.revoked_at || found.used_at) {
       // Replay of an already-rotated/revoked token: revoke the whole chain
@@ -528,7 +528,7 @@ export class AuthService {
           sessionId: found.session_id,
         });
       });
-      throw ProblemException.unauthorized('refresh_token tekrar kullanıldı; oturum sonlandırıldı.');
+      throw ApiException.unauthenticated('auth.refresh_token_replayed');
     }
 
     return withRlsContext(this.db, { actingUserId: found.user_id }, async (trx) => {
@@ -538,7 +538,7 @@ export class AuthService {
         .where('session_id', '=', found.session_id)
         .executeTakeFirstOrThrow();
       if (session.revoked_at) {
-        throw ProblemException.unauthorized('Oturum sonlandırılmış.');
+        throw ApiException.unauthenticated('auth.session_terminated');
       }
       const user = await trx
         .selectFrom('users')
@@ -610,7 +610,7 @@ export class AuthService {
         .where('revoked_at', 'is', null)
         .executeTakeFirst();
       if (result.numUpdatedRows === 0n) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
     });
   }

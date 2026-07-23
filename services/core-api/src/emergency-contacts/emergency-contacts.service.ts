@@ -11,7 +11,8 @@ import type {
 import type Redis from 'ioredis';
 import { REDIS } from '../common/redis.module';
 import { KYSELY } from '../common/db.module';
-import { ProblemException } from '../common/problem.exception';
+import { ApiException } from '../common/api.exception';
+import { ApiErrorCode } from '@sinalytix/domain';
 import { randomOtpCode } from '../common/hash.util';
 
 const MAX_CONTACTS = 3;
@@ -89,7 +90,7 @@ export class EmergencyContactsService {
         .where('deleted_at', 'is', null)
         .execute();
       if (active.length >= MAX_CONTACTS) {
-        throw ProblemException.conflict(`En fazla ${MAX_CONTACTS} acil kişi eklenebilir.`);
+        throw new ApiException({ code: ApiErrorCode.CONFLICT, messageKey: 'ec.max_contacts', messageParams: { max: MAX_CONTACTS } });
       }
       // Lowest free 1-3 slot, not `count + 1` — removing a non-last contact
       // frees its own slot, not necessarily the highest one (e.g. remove
@@ -97,7 +98,7 @@ export class EmergencyContactsService {
       const taken = new Set(active.map((r) => r.sort_order));
       const nextSortOrder = [1, 2, 3].find((n) => !taken.has(n));
       if (nextSortOrder === undefined) {
-        throw ProblemException.conflict(`En fazla ${MAX_CONTACTS} acil kişi eklenebilir.`);
+        throw new ApiException({ code: ApiErrorCode.CONFLICT, messageKey: 'ec.max_contacts', messageParams: { max: MAX_CONTACTS } });
       }
 
       const duplicatePhone = await trx
@@ -108,7 +109,7 @@ export class EmergencyContactsService {
         .where('deleted_at', 'is', null)
         .executeTakeFirst();
       if (duplicatePhone) {
-        throw ProblemException.conflict('Bu telefon numarası zaten acil kişi listesinde.');
+        throw ApiException.conflict('ec.phone_already_present');
       }
 
       const row = await trx
@@ -157,7 +158,7 @@ export class EmergencyContactsService {
       // over-broad-policy class of bug (Slice 3 review; the policy itself is
       // now gone, this makes the endpoint correct regardless).
       if (!existing || existing.patient_id !== actingUserId) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
 
       const phoneChanged = body.phone !== undefined && body.phone !== existing.phone;
@@ -175,7 +176,7 @@ export class EmergencyContactsService {
           .where('ec_id', '!=', ecId)
           .executeTakeFirst();
         if (duplicatePhone) {
-          throw ProblemException.conflict('Bu telefon numarası zaten acil kişi listesinde.');
+          throw ApiException.conflict('ec.phone_already_present');
         }
       }
       const row = await trx
@@ -192,7 +193,7 @@ export class EmergencyContactsService {
         .returningAll()
         .executeTakeFirst();
       if (!row) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
       return toPublic(row);
     });
@@ -210,7 +211,7 @@ export class EmergencyContactsService {
         .where('deleted_at', 'is', null)
         .executeTakeFirst();
       if (!existing || existing.patient_id !== actingUserId) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
       await trx
         .updateTable('emergency_contacts')
@@ -251,7 +252,7 @@ export class EmergencyContactsService {
         orderedIds.length !== ownedIds.size ||
         !orderedIds.every((id) => ownedIds.has(id))
       ) {
-        throw ProblemException.badRequest('ordered_ids hastanın mevcut acil kişi kümesiyle birebir eşleşmeli.');
+        throw ApiException.badRequest('ec.reorder_mismatch');
       }
 
       const values = orderedIds.map((id, idx) => sql`(${id}::uuid, ${idx + 1}::int)`);
@@ -288,7 +289,7 @@ export class EmergencyContactsService {
         .where('deleted_at', 'is', null)
         .executeTakeFirst();
       if (!contact) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
 
       const requests = await this.redis.incr(requestCountKey(ecId));
@@ -296,7 +297,7 @@ export class EmergencyContactsService {
         await this.redis.expire(requestCountKey(ecId), VERIFY_REQUEST_WINDOW_SECONDS);
       }
       if (requests > VERIFY_REQUEST_LIMIT) {
-        throw ProblemException.tooManyRequests('Çok fazla kod isteği. Lütfen daha sonra tekrar deneyin.');
+        throw ApiException.rateLimited('ec.verify_too_many_requests');
       }
 
       const code = randomOtpCode();
@@ -324,12 +325,12 @@ export class EmergencyContactsService {
         .executeTakeFirst(),
     );
     if (!owned) {
-      throw ProblemException.notFound();
+      throw ApiException.notFound();
     }
 
     const locked = await this.redis.get(lockoutKey(ecId));
     if (locked) {
-      throw ProblemException.tooManyRequests('Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.', VERIFY_LOCKOUT_SECONDS);
+      throw ApiException.rateLimited('auth.otp_too_many_attempts', VERIFY_LOCKOUT_SECONDS, { minutes: VERIFY_LOCKOUT_SECONDS / 60 });
     }
 
     const stored = await this.redis.get(codeKey(ecId));
@@ -340,9 +341,9 @@ export class EmergencyContactsService {
       }
       if (fails >= VERIFY_FAIL_LIMIT) {
         await this.redis.set(lockoutKey(ecId), '1', 'EX', VERIFY_LOCKOUT_SECONDS);
-        throw ProblemException.tooManyRequests('Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.', VERIFY_LOCKOUT_SECONDS);
+        throw ApiException.rateLimited('auth.otp_too_many_attempts', VERIFY_LOCKOUT_SECONDS, { minutes: VERIFY_LOCKOUT_SECONDS / 60 });
       }
-      throw ProblemException.badRequest('Kod hatalı veya süresi dolmuş.');
+      throw ApiException.badRequest('auth.code_invalid_or_expired');
     }
 
     await this.redis.del(codeKey(ecId), failCountKey(ecId));
@@ -356,7 +357,7 @@ export class EmergencyContactsService {
         .returningAll()
         .executeTakeFirst();
       if (!row) {
-        throw ProblemException.notFound();
+        throw ApiException.notFound();
       }
       return toPublic(row);
     });
