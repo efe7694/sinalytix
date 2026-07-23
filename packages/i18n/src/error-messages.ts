@@ -308,6 +308,53 @@ export const ERROR_MESSAGES = {
     tr: 'Bu talebi yalnız kişinin aktif aile üyesi karara bağlayabilir.',
   },
 
+  // ── Care tasks (Faz 2) ────────────────────────────────────────────────
+  'care_task.family_cannot_complete': {
+    en: 'Family members can add tasks, but only the person being cared for or their caregiver can mark one done.',
+    fr: 'Les membres de la famille peuvent ajouter des tâches, mais seules la personne accompagnée ou son soignant peuvent en marquer une comme faite.',
+    tr: 'Aile üyeleri görev ekleyebilir; bir görevi tamamlandı olarak yalnız bakım alan kişi veya bakıcısı işaretleyebilir.',
+  },
+  'care_task.already_done': {
+    en: 'This task is already marked done.',
+    fr: 'Cette tâche est déjà marquée comme faite.',
+    tr: 'Bu görev zaten tamamlandı olarak işaretli.',
+  },
+  'care_task.already_skipped': {
+    en: 'This task is already skipped.',
+    fr: 'Cette tâche est déjà passée.',
+    tr: 'Bu görev zaten atlandı.',
+  },
+  'care_task.nothing_to_undo': {
+    en: 'There is nothing to undo on this task.',
+    fr: 'Il n’y a rien à annuler sur cette tâche.',
+    tr: 'Bu görevde geri alınacak bir şey yok.',
+  },
+  'care_task.undo_actor_only': {
+    en: 'Only the person who marked this, or the person being cared for, can undo it.',
+    fr: 'Seule la personne qui l’a marquée, ou la personne accompagnée, peut annuler.',
+    tr: 'Bunu yalnız işaretleyen kişi veya bakım alan kişi geri alabilir.',
+  },
+  'care_task.undo_window_expired': {
+    en: 'The undo window has passed. You can mark the task again instead.',
+    fr: "Le délai d'annulation est écoulé. Vous pouvez marquer la tâche à nouveau.",
+    tr: 'Geri alma süresi doldu. Görevi yeniden işaretleyebilirsiniz.',
+  },
+  'care_task.if_match_required_for_medication': {
+    en: 'Editing a medication task requires the If-Match header.',
+    fr: "La modification d'une tâche de médicament nécessite l'en-tête If-Match.",
+    tr: 'İlaç görevini düzenlemek için If-Match başlığı zorunlu.',
+  },
+  'care_task.if_match_malformed': {
+    en: 'The If-Match header is not a valid version.',
+    fr: "L'en-tête If-Match n'est pas une version valide.",
+    tr: 'If-Match başlığı geçerli bir sürüm değil.',
+  },
+  'care_task.date_malformed': {
+    en: 'The date must be in YYYY-MM-DD form.',
+    fr: 'La date doit être au format AAAA-MM-JJ.',
+    tr: 'Tarih YYYY-AA-GG biçiminde olmalı.',
+  },
+
   // ── Consent ───────────────────────────────────────────────────────────
   'consent.record_append_only': {
     en: 'Consent records cannot be changed or deleted. Record a new consent instead.',

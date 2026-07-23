@@ -86,6 +86,9 @@ export async function setupTestDatabase(): Promise<TestDbHandles> {
  * a different config value should edit the row and restore it.
  */
 const DOMAIN_TABLES = [
+  'activity_log',
+  'care_task_occurrences',
+  'care_tasks',
   'approval_requests',
   'patient_approval_configs',
   'caregiver_links',

@@ -9,6 +9,7 @@ import { EmergencyContactsModule } from './emergency-contacts/emergency-contacts
 import { FamilyLinksModule } from './family-links/family-links.module';
 import { CaregiverLinksModule } from './caregiver-links/caregiver-links.module';
 import { ApprovalRequestsModule } from './approval-requests/approval-requests.module';
+import { CareTasksModule } from './care-tasks/care-tasks.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { ApprovalRequestsModule } from './approval-requests/approval-requests.mo
     FamilyLinksModule,
     CaregiverLinksModule,
     ApprovalRequestsModule,
+    CareTasksModule,
   ],
 })
 export class AppModule {}

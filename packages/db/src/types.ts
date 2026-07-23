@@ -372,6 +372,63 @@ export interface ApprovalRequestsTable {
   created_at: GeneratedTimestamp;
 }
 
+
+// ── Care & Tasks (migration 0020, Faz 2 Slice 1) ─────────────────────────
+
+export interface CareTasksTable {
+  task_id: Generated<string>;
+  patient_id: string;
+  parent_task_id: string | null;
+  care_plan_id: string | null;
+  goal_id: string | null;
+  title: string;
+  type: string;
+  subtype: ColumnType<string, string | undefined, string>;
+  schedule: ColumnType<unknown, unknown | undefined, unknown>;
+  created_by: string;
+  created_by_actor_type: string;
+  source_provenance: ColumnType<string, string | undefined, string>;
+  status: ColumnType<string, string | undefined, string>;
+  /** Bumped by a trigger on every UPDATE — never set it by hand. */
+  version: ColumnType<number, number | undefined, number>;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+  deleted_at: Timestamp | null;
+}
+
+export interface CareTaskOccurrencesTable {
+  occurrence_id: Generated<string>;
+  task_id: string;
+  patient_id: string;
+  /** `YYYY-MM-DD` in the PATIENT's timezone — a calendar date, not an instant. */
+  date_local: ColumnType<string, string, string>;
+  time_local: string | null;
+  status: ColumnType<string, string | undefined, string>;
+  progress_count: number | null;
+  completed_at: Timestamp | null;
+  completed_by: string | null;
+  completed_by_actor_type: string | null;
+  skipped_at: Timestamp | null;
+  skipped_by: string | null;
+  carry_over_from: string | null;
+  created_at: GeneratedTimestamp;
+  last_updated_at: GeneratedTimestamp;
+}
+
+export interface ActivityLogTable {
+  event_id: Generated<string>;
+  patient_id: string;
+  entity_type: string;
+  entity_id: string;
+  task_id: string | null;
+  occurrence_id: string | null;
+  action: string;
+  actor_type: string;
+  actor_id: string | null;
+  diff: ColumnType<unknown, unknown | undefined, unknown>;
+  created_at: GeneratedTimestamp;
+}
+
 export interface Database {
   users: UsersTable;
   oauth_identities: OauthIdentitiesTable;
@@ -400,6 +457,9 @@ export interface Database {
   caregiver_links: CaregiverLinksTable;
   patient_approval_configs: PatientApprovalConfigsTable;
   approval_requests: ApprovalRequestsTable;
+  care_tasks: CareTasksTable;
+  care_task_occurrences: CareTaskOccurrencesTable;
+  activity_log: ActivityLogTable;
   system_config: SystemConfigTable;
   feature_flags: FeatureFlagsTable;
 }

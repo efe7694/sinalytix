@@ -17,4 +17,6 @@ export * from './emergency-contact';
 export * from './family-link';
 export * from './caregiver-link';
 export * from './approval';
+export * from './care-task';
+export * from './care-schedule';
 export * from './pagination';
