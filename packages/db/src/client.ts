@@ -1,6 +1,15 @@
 import { Kysely, PostgresDialect, sql } from 'kysely';
-import { Pool } from 'pg';
+import { Pool, types as pgTypes } from 'pg';
 import type { Database } from './types';
+
+// Postgres `date` (OID 1082) is a CALENDAR DATE — no time, no zone. pg's
+// default parser turns it into a JS Date at LOCAL midnight, and any later
+// `toISOString()` then shifts it back a day for a negative UTC offset
+// (Toronto is -4/-5). For `care_task_occurrences.date_local` that means a
+// dose silently moving to the previous day. Handing the raw `YYYY-MM-DD`
+// string through is the only representation that can't drift; the domain
+// treats these as strings throughout (`@sinalytix/domain` care-schedule).
+pgTypes.setTypeParser(pgTypes.builtins.DATE, (value: string) => value);
 
 export function createPool(connectionString: string): Pool {
   return new Pool({ connectionString });

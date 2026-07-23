@@ -5,3 +5,4 @@ export * from './family-link-queries';
 export * from './caregiver-link-queries';
 export * from './approval-queries';
 export * from './emergency-contact-queries';
+export * from './care-task-queries';
