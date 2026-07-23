@@ -159,6 +159,30 @@ export class AuthService {
     return appContext === AppContext.HCP ? [] : [appContext as Role];
   }
 
+  /**
+   * The ONLY app_contexts a passwordless / social self-service flow (OTP,
+   * Apple/Google SSO) may create or sign into. Enforced because K9 added
+   * `admin` to `AppContext` and widened the `sessions` CHECK to accept it — so
+   * without this gate, `POST /auth/otp/verify {app_context:"admin"}` mints a
+   * `roles=['admin']` user with an admin session (`initialRoles` returns
+   * `[appContext]`), a clean self-service superadmin primitive that defeats
+   * this slice's own `admin_users` fix. Admin accounts are provisioned by a
+   * superadmin under the two-person rule (Admin PRD §1), never self-service;
+   * HCP is email+password+MFA only (Modül 1 §3.5), never OTP/SSO. `app_context`
+   * is client-supplied and only Zod-typed, so this is the semantic gate Zod
+   * cannot express. */
+  private static readonly SELF_SERVICE_CONTEXTS: ReadonlySet<string> = new Set([
+    AppContext.PATIENT,
+    AppContext.FAMILY,
+    AppContext.CAREGIVER,
+  ]);
+
+  private assertSelfServiceContext(appContext: string): void {
+    if (!AuthService.SELF_SERVICE_CONTEXTS.has(appContext)) {
+      throw ProblemException.badRequest('Bu uygulama için bu giriş yöntemi kullanılamaz.');
+    }
+  }
+
   // ── Signup ───────────────────────────────────────────────────────────
 
   async signup(req: SignupRequest, meta: RequestMeta): Promise<AuthResult> {
@@ -234,6 +258,7 @@ export class AuthService {
     appContext: string,
     meta: RequestMeta,
   ): Promise<AuthResult> {
+    this.assertSelfServiceContext(appContext);
     const verifier: IdTokenVerifier = method === AuthMethod.APPLE_SSO ? this.appleVerifier : this.googleVerifier;
     const identity = await verifier.verify(idToken);
 
@@ -364,6 +389,7 @@ export class AuthService {
   }
 
   async verifyOtp(phoneE164: string, code: string, appContext: string, meta: RequestMeta): Promise<AuthResult> {
+    this.assertSelfServiceContext(appContext);
     const ok = await this.otpService.verifyCode(phoneE164, code);
     if (!ok) {
       throw ProblemException.unauthorized('Kod geçersiz veya süresi dolmuş.');
